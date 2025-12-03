@@ -1,0 +1,44 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #ffffff;
+  color: #222;
+}
+
+.header {
+  text-align: center;
+  padding: 20px;
+  background: white;
+  border-bottom: 2px solid #2f7d32; /* New Day green */
+}
+
+.logo {
+  width: 120px;
+  margin-bottom: 10px;
+}
+
+nav.nav {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid #ddd;
+  background: #f5f5f5;
+}
+
+nav.nav button {
+  flex: 1;
+  padding: 14px;
+  border: none;
+  background: white;
+  font-size: 16px;
+  cursor: pointer;
+  border-right: 1px solid #eee;
+}
+
+nav.nav button:hover {
+  background: #e8f5e9;
+}
+
+#content {
+  padding: 20px;
+  font-size: 18px;
+}
