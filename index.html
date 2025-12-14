@@ -3,30 +3,292 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>New Day Pest Control</title> 
+  <title>New Day Pest Control - App</title>
   <link rel="stylesheet" href="styles.css" />
-  <link rel="manifest" href="manifest.json" />
 </head>
-<body>
 
-  <header class="header">
-    <img src="logo.png" alt="New Day Logo" class="logo" />
-    <h1>New Day Pest Control</h1>
-    <p>(201) 972-5592 • newdaypestcontrol@yahoo.com</p>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">ND</div>
+      <div class="brand-text">
+        <div class="brand-title">New Day Pest Control</div>
+        <div class="brand-sub">(201) 972-5592 • newdaypestcontrol@yahoo.com</div>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="btn-export">Export</button>
+      <button class="btn btn-ghost" id="btn-import">Import</button>
+      <input type="file" id="import-file" accept="application/json" hidden />
+    </div>
   </header>
 
-  <nav class="nav">
-    <button onclick="showPage('customers')">Customers</button>
-    <button onclick="showPage('jobs')">Jobs</button>
-    <button onclick="showPage('calendar')">Calendar</button>
-    <button onclick="showPage('materials')">Materials</button>
-    <button onclick="showPage('contracts')">Contracts</button>
-    <button onclick="showPage('receipts')">Receipts</button>
-  </nav>
+  <div class="layout">
+    <aside class="sidebar">
+      <button class="nav-item active" data-page="customers">Customers</button>
+      <button class="nav-item" data-page="jobs">Jobs</button>
+      <button class="nav-item" data-page="calendar">Calendar</button>
+      <button class="nav-item" data-page="materials">Materials</button>
+      <button class="nav-item" data-page="receipts">Receipts</button>
 
-  <main id="content">
-    <p>Welcome to the New Day Pest Control Service App</p>
-  </main>
+      <div class="sidebar-footer">
+        <button class="btn btn-outline" id="btn-manage-chemicals">Manage Chemicals</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- CUSTOMERS -->
+      <section class="page" id="page-customers">
+        <div class="page-head">
+          <h1>Customers</h1>
+          <div class="page-head-actions">
+            <button class="btn" id="btn-new-customer">+ New Customer</button>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Customer List</div>
+            <div class="search-row">
+              <input class="input" id="customer-search" placeholder="Search customers..." />
+            </div>
+            <div class="list" id="customer-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Customer Details</div>
+
+            <div class="form-grid">
+              <div>
+                <label class="label">Customer Name</label>
+                <input class="input" id="cust-name" placeholder="John Doe" />
+              </div>
+
+              <div>
+                <label class="label">Phone</label>
+                <input class="input" id="cust-phone" placeholder="(201) 555-1234" />
+              </div>
+
+              <div class="span-2">
+                <label class="label">Address</label>
+                <input class="input" id="cust-address" placeholder="123 Main St, Fair Lawn, NJ" />
+              </div>
+
+              <div>
+                <label class="label">Email</label>
+                <input class="input" id="cust-email" placeholder="customer@email.com" />
+              </div>
+
+              <div>
+                <label class="label">Service Plan</label>
+                <select class="select" id="cust-plan">
+                  <option value="One-Time">One-Time</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Quarterly">Quarterly</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row gap">
+              <button class="btn" id="btn-save-customer">Save Customer</button>
+              <button class="btn btn-outline" id="btn-create-job">Create Job</button>
+              <button class="btn btn-danger" id="btn-delete-customer">Delete</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="card-title">Customer Jobs</div>
+            <div class="list" id="customer-jobs"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- JOBS -->
+      <section class="page hidden" id="page-jobs">
+        <div class="page-head">
+          <h1>Jobs</h1>
+          <div class="page-head-actions">
+            <button class="btn" id="btn-new-job">+ New Job</button>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Job List</div>
+            <div class="search-row">
+              <input class="input" id="job-search" placeholder="Search jobs..." />
+            </div>
+            <div class="list" id="job-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Job / Receipt</div>
+
+            <div class="form-grid">
+              <div class="span-2">
+                <label class="label">Customer</label>
+                <select class="select" id="job-customer"></select>
+              </div>
+
+              <div>
+                <label class="label">Service Frequency</label>
+                <select class="select" id="job-frequency">
+                  <option value="One-Time">One-Time</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Quarterly">Quarterly</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="label">Date</label>
+                <input class="input" id="job-date" type="date" />
+              </div>
+
+              <div class="span-2">
+                <label class="label">Service Type (choose one or more)</label>
+                <div class="chips" id="pest-chips"></div>
+              </div>
+
+              <div class="span-2">
+                <label class="label">Notes</label>
+                <textarea class="textarea" id="job-notes" placeholder="Notes..."></textarea>
+              </div>
+
+              <div>
+                <label class="label">Amount Charged ($)</label>
+                <input class="input" id="job-amount" type="number" step="0.01" placeholder="0.00" />
+              </div>
+
+              <div>
+                <label class="label">NJ Tax</label>
+                <div class="taxbox">
+                  <div>6.625%</div>
+                  <div class="muted" id="tax-preview">$0.00</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="row between">
+              <div class="card-title">Chemicals Used</div>
+              <button class="btn btn-outline" id="btn-add-chemical-row">+ Add Chemical</button>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table" id="chem-table">
+                <thead>
+                  <tr>
+                    <th style="width: 34%;">Chemical</th>
+                    <th style="width: 16%;">Amount</th>
+                    <th style="width: 16%;">Unit</th>
+                    <th style="width: 22%;">Mix Ratio</th>
+                    <th style="width: 12%;">Remove</th>
+                  </tr>
+                </thead>
+                <tbody id="chem-tbody"></tbody>
+              </table>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="receipt">
+              <div class="receipt-row">
+                <div class="receipt-title">Receipt Total</div>
+                <div class="receipt-amount" id="total-preview">$0.00</div>
+              </div>
+              <div class="muted">Email from a static app uses your email program (mailto). Later we can connect real email sending.</div>
+            </div>
+
+            <div class="row gap">
+              <button class="btn" id="btn-save-job">Save Job</button>
+              <button class="btn btn-outline" id="btn-view-receipt">View Receipt</button>
+              <button class="btn btn-outline" id="btn-email-receipt">Email Receipt</button>
+              <button class="btn btn-danger" id="btn-delete-job">Delete</button>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- CALENDAR -->
+      <section class="page hidden" id="page-calendar">
+        <div class="page-head">
+          <h1>Calendar</h1>
+        </div>
+        <div class="card">
+          <div class="muted">Next step: weekly + monthly grid calendar like PestPac. (We’ll build it after Jobs + Customers are perfect.)</div>
+        </div>
+      </section>
+
+      <!-- MATERIALS -->
+      <section class="page hidden" id="page-materials">
+        <div class="page-head">
+          <h1>Materials</h1>
+        </div>
+        <div class="card">
+          <div class="muted">We can add your full chemical list (name + EPA #) here too.</div>
+        </div>
+      </section>
+
+      <!-- RECEIPTS -->
+      <section class="page hidden" id="page-receipts">
+        <div class="page-head">
+          <h1>Receipts</h1>
+        </div>
+        <div class="card">
+          <div class="muted">Receipts are created from Jobs. Use “Jobs → View Receipt / Email Receipt”.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: Manage Chemicals -->
+  <div class="modal hidden" id="chem-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">Manage Chemicals</div>
+          <div class="muted">Add/edit chemicals here. They will appear in the job dropdown.</div>
+        </div>
+        <button class="icon-btn" id="chem-modal-close">✕</button>
+      </div>
+
+      <div class="row gap">
+        <input class="input" id="chem-new-name" placeholder="Chemical name (ex: Transport Mikron)" />
+        <input class="input" id="chem-new-epa" placeholder="EPA # (optional)" />
+        <button class="btn" id="chem-add">Add</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="list" id="chem-list"></div>
+      <div class="row right">
+        <button class="btn btn-outline" id="chem-done">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Receipt Preview -->
+  <div class="modal hidden" id="receipt-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">Receipt Preview</div>
+          <div class="muted" id="receipt-subtitle"></div>
+        </div>
+        <button class="icon-btn" id="receipt-close">✕</button>
+      </div>
+
+      <div class="receipt-paper" id="receipt-paper"></div>
+
+      <div class="row right gap">
+        <button class="btn btn-outline" id="receipt-copy">Copy Text</button>
+        <button class="btn" id="receipt-close-2">Close</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
