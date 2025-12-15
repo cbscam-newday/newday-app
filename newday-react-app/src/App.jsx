@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const NJ_TAX_RATE = 0.06625;
 
-const SERVICE_PLANS = ["One-time", "Monthly", "Quarterly"];
+const SERVICE_TYPES = ["One-time", "Monthly", "Quarterly"];
+
 const PEST_TYPES = [
+  "Ants",
   "Mice",
   "Rats",
-  "Ants",
   "Spiders",
   "Roaches",
   "Bed Bugs",
@@ -20,33 +21,31 @@ const PEST_TYPES = [
   "Other",
 ];
 
-const DEFAULT_CHEMICALS = [
-  { id: "c1", name: "FirstStrike (Rodent Bait)", epa: "" },
-  { id: "c2", name: "CB-80 (Aerosol)", epa: "" },
-  { id: "c3", name: "Transport (Insecticide)", epa: "" },
+const DEFAULT_CHEMICAL_LIBRARY = [
+  { name: "FirstStrike Soft Bait", epa: "7173-258" },
+  { name: "CB-80 (Aerosol)", epa: "279-3393" },
+  { name: "Transport Mikron", epa: "8033-109-279" },
+  { name: "Alpine WSG", epa: "499-561" },
+  { name: "Termidor SC", epa: "7969-210" },
+  { name: "Advion Cockroach Gel Bait", epa: "100-1484" },
+  { name: "Suspend SC", epa: "432-763" },
+  { name: "Gentrol IGR Concentrate", epa: "2724-351" },
+  { name: "Tekko Pro IGR", epa: "53883-335" },
+  { name: "Phantom Termiticide/Insecticide", epa: "241-392" },
+  { name: "Demand CS", epa: "100-1066" },
 ];
-
-const LS = {
-  customers: "nd_customers_v2",
-  jobs: "nd_jobs_v2",
-  chemicals: "nd_chemicals_v2",
-};
-
-function uid() {
-  return (crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
-}
-
-function safeParse(json, fallback) {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return fallback;
-  }
-}
 
 function money(n) {
   const x = Number.isFinite(n) ? n : 0;
   return x.toLocaleString(undefined, { style: "currency", currency: "USD" });
+}
+
+function todayISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function toISODate(d) {
@@ -56,147 +55,114 @@ function toISODate(d) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function todayISO() {
-  return toISODate(new Date());
+function addDays(dateObj, days) {
+  const d = new Date(dateObj);
+  d.setDate(d.getDate() + days);
+  return d;
 }
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
+function startOfWeek(dateObj) {
+  const d = new Date(dateObj);
+  // Week starts Monday
+  const day = d.getDay(); // 0 Sun ... 6 Sat
+  const diff = (day === 0 ? -6 : 1) - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function formatNiceDate(isoDate) {
-  // isoDate = YYYY-MM-DD
-  const [y, m, d] = isoDate.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+function formatTimeLabel(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hh = ((h + 11) % 12) + 1;
+  return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function mapsUrl(address) {
-  const q = encodeURIComponent(address || "");
-  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+function googleMapsLink(address) {
+  const a = (address || "").trim();
+  if (!a) return "";
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`;
 }
 
-function buildReceiptText({ business, customer, job, totals, chemicals }) {
+function buildReceiptText(job) {
   const lines = [];
-  lines.push(business.name);
-  lines.push(`${business.phone} • ${business.email}`);
+  lines.push("New Day Pest Control");
+  lines.push("(201) 972-5592 • newdaypestcontrol@yahoo.com");
   lines.push("--------------------------------------------------");
-  lines.push(`DATE/TIME: ${job.startDate} ${job.startTime}`);
-  lines.push(`CUSTOMER: ${customer.name}`);
-  lines.push(`PHONE: ${customer.phone}`);
-  lines.push(`EMAIL: ${customer.email}`);
-  lines.push(`ADDRESS: ${customer.address}`);
+  lines.push(`Date: ${job.date}`);
+  if (job.time) lines.push(`Time: ${job.time}`);
+  lines.push(`Customer: ${job.customerName}`);
+  lines.push(`Address: ${job.address}`);
+  lines.push(`Phone: ${job.phone}`);
+  lines.push(`Email: ${job.email}`);
   lines.push("");
-  lines.push(`SERVICE PLAN: ${job.servicePlan}`);
-  lines.push(`PEST TYPE(S): ${(job.pests || []).join(", ") || "—"}`);
+  lines.push(`Service Plan: ${job.serviceType}`);
+  lines.push(`Pest Type(s): ${job.pestTypes.join(", ") || "—"}`);
   lines.push("");
-  lines.push("CHEMICALS USED:");
-  if (!chemicals.length) lines.push("  —");
-  chemicals.forEach((c, i) => {
-    lines.push(
-      `  ${i + 1}. ${c.chemicalName}${c.epa ? ` (EPA ${c.epa})` : ""} | ${c.amount || ""} ${c.unit || ""} | Ratio: ${c.ratio || ""}`
-    );
-  });
+  lines.push("Chemicals Used:");
+  if (!job.chemicals.length) {
+    lines.push("  —");
+  } else {
+    job.chemicals.forEach((c, idx) => {
+      const epaPart = c.epa ? ` (EPA ${c.epa})` : "";
+      lines.push(
+        `  ${idx + 1}. ${c.name}${epaPart} | Amount: ${c.amountUsed} ${c.amountUnit} | Mix ratio: ${c.mixRatio}`
+      );
+    });
+  }
   lines.push("");
-  lines.push("NOTES:");
-  lines.push(job.notes?.trim() ? job.notes.trim() : "—");
+  lines.push("Notes:");
+  lines.push(job.notes || "—");
   lines.push("");
-  lines.push(`SUBTOTAL: ${money(totals.subtotal)}`);
-  lines.push(`NJ TAX (6.625%): ${money(totals.tax)}`);
-  lines.push(`TOTAL: ${money(totals.total)}`);
+  lines.push(`Subtotal: ${money(job.subtotal)}`);
+  lines.push(`NJ Tax (6.625%): ${money(job.tax)}`);
+  lines.push(`Total: ${money(job.total)}`);
   lines.push("");
   lines.push("Thank you for your business!");
   return lines.join("\n");
 }
 
-/** Simple UI pieces */
-function Input(props) {
-  return (
-    <input
-      {...props}
-      style={{
-        height: 38,
-        borderRadius: 10,
-        border: "1px solid rgba(0,0,0,0.12)",
-        padding: "0 10px",
-        outline: "none",
-        fontSize: 14,
-        background: "white",
-        ...props.style,
-      }}
-    />
-  );
-}
+function MailtoReceiptButton({ job }) {
+  const subject = encodeURIComponent(`Receipt - New Day Pest Control - ${job.date}${job.time ? " " + job.time : ""}`);
+  const body = encodeURIComponent(buildReceiptText(job));
+  const to = (job.email || "").trim();
+  const href = `mailto:${to}?subject=${subject}&body=${body}`;
 
-function Select(props) {
   return (
-    <select
-      {...props}
-      style={{
-        height: 38,
-        borderRadius: 10,
-        border: "1px solid rgba(0,0,0,0.12)",
-        padding: "0 10px",
-        outline: "none",
-        fontSize: 14,
-        background: "white",
-        ...props.style,
+    <a
+      href={href}
+      style={btnPrimary}
+      onClick={(e) => {
+        if (!to) {
+          e.preventDefault();
+          alert("Add the customer email first, then click Email Receipt.");
+        }
       }}
-    />
-  );
-}
-
-function Textarea(props) {
-  return (
-    <textarea
-      {...props}
-      style={{
-        borderRadius: 10,
-        border: "1px solid rgba(0,0,0,0.12)",
-        padding: 10,
-        outline: "none",
-        fontSize: 14,
-        background: "white",
-        minHeight: 110,
-        resize: "vertical",
-        ...props.style,
-      }}
-    />
+      title={to ? "Open your email app with a pre-filled receipt" : "Add an email first"}
+    >
+      Email Receipt
+    </a>
   );
 }
 
 function Field({ label, children }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, fontWeight: 900, color: "#1f2937" }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 900, color: "#111827" }}>{label}</div>
       {children}
     </div>
   );
 }
 
-function Btn({ variant = "primary", children, ...props }) {
-  const styles =
-    variant === "primary"
-      ? { background: "#0f7a2a", color: "white", border: "1px solid rgba(0,0,0,0.08)" }
-      : variant === "danger"
-      ? { background: "#b91c1c", color: "white", border: "1px solid rgba(0,0,0,0.08)" }
-      : { background: "white", color: "#111827", border: "1px solid rgba(0,0,0,0.12)" };
-
-  return (
-    <button
-      {...props}
-      style={{
-        padding: "10px 12px",
-        borderRadius: 10,
-        fontWeight: 900,
-        cursor: "pointer",
-        ...styles,
-        ...props.style,
-      }}
-    >
-      {children}
-    </button>
-  );
+function Input(props) {
+  return <input {...props} style={{ ...inputBase, ...(props.style || {}) }} />;
+}
+function Select(props) {
+  return <select {...props} style={{ ...inputBase, ...(props.style || {}) }} />;
+}
+function Textarea(props) {
+  return <textarea {...props} style={{ ...textareaBase, ...(props.style || {}) }} />;
 }
 
 function Pill({ children }) {
@@ -212,6 +178,7 @@ function Pill({ children }) {
         color: "#0f7a2a",
         fontWeight: 900,
         fontSize: 12,
+        whiteSpace: "nowrap",
       }}
     >
       {children}
@@ -219,436 +186,314 @@ function Pill({ children }) {
   );
 }
 
-export default function App() {
-  const business = useMemo(
-    () => ({
-      name: "New Day Pest Control",
-      phone: "(201) 972-5592",
-      email: "newdaypestcontrol@yahoo.com",
-    }),
-    []
+function Modal({ open, title, subtitle, onClose, children, footer }) {
+  if (!open) return null;
+  return (
+    <div style={modalBackdrop} onMouseDown={onClose}>
+      <div style={modalCard} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={modalHead}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontWeight: 950, fontSize: 16 }}>{title}</div>
+            {subtitle ? <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>{subtitle}</div> : null}
+          </div>
+          <button style={iconBtn} onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div style={{ padding: 14 }}>{children}</div>
+        {footer ? <div style={modalFooter}>{footer}</div> : null}
+      </div>
+    </div>
   );
+}
 
-  const [tab, setTab] = useState("customers");
+export default function App() {
+  const [active, setActive] = useState("customers");
 
-  // Data
+  // Customers “database”
   const [customers, setCustomers] = useState([]);
+
+  // Jobs database
   const [jobs, setJobs] = useState([]);
-  const [chemicals, setChemicals] = useState([]);
 
-  // UI State
-  const [selectedCustomerId, setSelectedCustomerId] = useState("");
-  const selectedCustomer = useMemo(() => customers.find((c) => c.id === selectedCustomerId) || null, [customers, selectedCustomerId]);
+  // Chemicals library (editable later; for now fixed list + manual typing)
+  const [chemLibrary] = useState(DEFAULT_CHEMICAL_LIBRARY);
 
-  const [customerForm, setCustomerForm] = useState({
-    id: "",
-    name: "",
-    address: "",
-    phone: "",
-    email: "",
-    plan: "One-time",
-  });
+  // Calendar state
+  const [calendarMode, setCalendarMode] = useState("week"); // "week" | "day"
+  const [calendarFocus, setCalendarFocus] = useState(new Date());
+  const [slotModalOpen, setSlotModalOpen] = useState(false);
+  const [slotISODate, setSlotISODate] = useState(todayISO());
+  const [slotTime, setSlotTime] = useState("09:00 AM");
 
-  // Job editor
-  const [jobId, setJobId] = useState("");
-  const [jobStartDate, setJobStartDate] = useState(todayISO());
-  const [jobStartTime, setJobStartTime] = useState("09:00");
-  const [jobServicePlan, setJobServicePlan] = useState("One-time");
-  const [jobPests, setJobPests] = useState([]);
-  const [jobNotes, setJobNotes] = useState("");
-  const [jobSubtotalRaw, setJobSubtotalRaw] = useState("");
+  // Ticket form (also used by calendar modal)
+  const [date, setDate] = useState(todayISO());
+  const [time, setTime] = useState(""); // optional for non-scheduled jobs
 
-  const [jobChemRows, setJobChemRows] = useState([
-    { rowId: uid(), chemicalId: chemicals[0]?.id || "", amount: "", unit: "oz", ratio: "" },
+  const [customerName, setCustomerName] = useState("");
+  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+
+  const [serviceType, setServiceType] = useState("One-time");
+  const [pestTypes, setPestTypes] = useState([]);
+
+  const [chemicals, setChemicals] = useState([
+    { name: "", epa: "", amountUsed: "", amountUnit: "oz", mixRatio: "" },
   ]);
 
-  // Calendar
-  const [calMonth, setCalMonth] = useState(() => {
-    const d = new Date();
-    return { y: d.getFullYear(), m: d.getMonth() }; // m=0..11
-  });
-  const [calSelectedDate, setCalSelectedDate] = useState(todayISO());
+  const [notes, setNotes] = useState("");
+  const [subtotalRaw, setSubtotalRaw] = useState("");
 
-  // Load data from localStorage
+  // Auto-fill: when customerName matches a saved customer, fill fields
+  const lastAutoFillRef = useRef("");
   useEffect(() => {
-    const c = safeParse(localStorage.getItem(LS.customers) || "[]", []);
-    const j = safeParse(localStorage.getItem(LS.jobs) || "[]", []);
-    const ch = safeParse(localStorage.getItem(LS.chemicals) || "[]", []);
-    setCustomers(Array.isArray(c) ? c : []);
-    setJobs(Array.isArray(j) ? j : []);
-    setChemicals(Array.isArray(ch) && ch.length ? ch : DEFAULT_CHEMICALS);
+    const typed = (customerName || "").trim();
+    if (!typed) return;
 
-    // default selection
-    if (Array.isArray(c) && c.length) setSelectedCustomerId(c[0].id);
-  }, []);
+    // prevent infinite loops if user is editing after autofill
+    if (lastAutoFillRef.current === typed) return;
 
-  // Save data
-  useEffect(() => {
-    localStorage.setItem(LS.customers, JSON.stringify(customers));
-  }, [customers]);
+    const found = customers.find((c) => c.name.toLowerCase() === typed.toLowerCase());
+    if (found) {
+      setAddress(found.address || "");
+      setPhone(found.phone || "");
+      setEmail(found.email || "");
+      setServiceType(found.plan || "One-time");
+      lastAutoFillRef.current = found.name;
+    }
+  }, [customerName, customers]);
 
-  useEffect(() => {
-    localStorage.setItem(LS.jobs, JSON.stringify(jobs));
-  }, [jobs]);
-
-  useEffect(() => {
-    localStorage.setItem(LS.chemicals, JSON.stringify(chemicals));
-  }, [chemicals]);
-
-  // Keep chemical rows valid when chemicals load/change
-  useEffect(() => {
-    setJobChemRows((prev) => {
-      const firstId = chemicals[0]?.id || "";
-      const next = prev.map((r) => ({ ...r, chemicalId: r.chemicalId || firstId }));
-      return next.length ? next : [{ rowId: uid(), chemicalId: firstId, amount: "", unit: "oz", ratio: "" }];
-    });
-  }, [chemicals]);
-
-  // Auto-fill job from selected customer (your request #3)
-  useEffect(() => {
-    if (!selectedCustomer) return;
-    // Auto-fill service plan too
-    setJobServicePlan(selectedCustomer.plan || "One-time");
-  }, [selectedCustomer]);
-
-  // Totals
   const subtotal = useMemo(() => {
-    const n = Number(String(jobSubtotalRaw).replace(/[^0-9.]/g, ""));
+    const n = Number(String(subtotalRaw).replace(/[^0-9.]/g, ""));
     return Number.isFinite(n) ? n : 0;
-  }, [jobSubtotalRaw]);
+  }, [subtotalRaw]);
 
   const tax = useMemo(() => subtotal * NJ_TAX_RATE, [subtotal]);
   const total = useMemo(() => subtotal + tax, [subtotal, tax]);
 
-  function resetCustomerForm() {
-    setCustomerForm({ id: "", name: "", address: "", phone: "", email: "", plan: "One-time" });
-  }
-
-  function newCustomer() {
-    resetCustomerForm();
-    setTab("customers");
-  }
-
-  function saveCustomer() {
-    const name = customerForm.name.trim();
-    if (!name) return alert("Customer name is required.");
-    const phone = customerForm.phone.trim();
-    if (!phone) return alert("Phone number is required.");
-    const address = customerForm.address.trim();
-    if (!address) return alert("Address is required.");
-
-    if (customerForm.id) {
-      setCustomers((prev) =>
-        prev.map((c) => (c.id === customerForm.id ? { ...c, ...customerForm, name, phone, address, email: customerForm.email.trim() } : c))
-      );
-      setSelectedCustomerId(customerForm.id);
-    } else {
-      const id = uid();
-      const created = { ...customerForm, id, name, phone, address, email: customerForm.email.trim() };
-      setCustomers((prev) => [created, ...prev]);
-      setSelectedCustomerId(id);
+  useEffect(() => {
+    // Load local storage
+    const c = localStorage.getItem("nd_customers_v1");
+    const j = localStorage.getItem("nd_jobs_v2");
+    if (c) {
+      try {
+        setCustomers(JSON.parse(c));
+      } catch {}
     }
-    alert("Customer saved ✅");
-  }
+    if (j) {
+      try {
+        setJobs(JSON.parse(j));
+      } catch {}
+    }
+  }, []);
 
-  function deleteCustomer() {
-    if (!customerForm.id) return alert("Load a customer first.");
-    if (!confirm("Delete this customer and their jobs?")) return;
+  useEffect(() => {
+    localStorage.setItem("nd_customers_v1", JSON.stringify(customers));
+  }, [customers]);
 
-    const id = customerForm.id;
-    setCustomers((prev) => prev.filter((c) => c.id !== id));
-    setJobs((prev) => prev.filter((j) => j.customerId !== id));
-    resetCustomerForm();
-    setSelectedCustomerId("");
-  }
+  useEffect(() => {
+    localStorage.setItem("nd_jobs_v2", JSON.stringify(jobs));
+  }, [jobs]);
 
-  function loadCustomer(id) {
-    const c = customers.find((x) => x.id === id);
-    if (!c) return;
-    setCustomerForm({ ...c });
-    setSelectedCustomerId(id);
-  }
+  const currentJob = useMemo(() => {
+    const cleanedChems = chemicals
+      .map((c) => ({
+        name: (c.name || "").trim(),
+        epa: (c.epa || "").trim(),
+        amountUsed: (c.amountUsed || "").trim(),
+        amountUnit: (c.amountUnit || "oz").trim(),
+        mixRatio: (c.mixRatio || "").trim(),
+      }))
+      .filter((c) => c.name || c.amountUsed || c.mixRatio);
 
-  function startNewJob(forCustomerId = selectedCustomerId) {
-    if (!forCustomerId) return alert("Select a customer first.");
-    setTab("jobs");
-    setJobId(""); // new
-    setJobStartDate(todayISO());
-    setJobStartTime("09:00");
-    const c = customers.find((x) => x.id === forCustomerId);
-    setSelectedCustomerId(forCustomerId);
-    setJobServicePlan(c?.plan || "One-time");
-    setJobPests([]);
-    setJobNotes("");
-    setJobSubtotalRaw("");
-    setJobChemRows([{ rowId: uid(), chemicalId: chemicals[0]?.id || "", amount: "", unit: "oz", ratio: "" }]);
-  }
-
-  function saveJob() {
-    if (!selectedCustomerId) return alert("Select a customer first.");
-    const c = customers.find((x) => x.id === selectedCustomerId);
-    if (!c) return alert("Customer not found.");
-    if (!jobStartDate) return alert("Pick a date.");
-    if (!jobStartTime) return alert("Pick a time.");
-
-    const cleanedChem = jobChemRows
-      .map((r) => {
-        const chem = chemicals.find((x) => x.id === r.chemicalId);
-        return {
-          chemicalId: r.chemicalId,
-          chemicalName: chem?.name || "",
-          epa: chem?.epa || "",
-          amount: String(r.amount || "").trim(),
-          unit: r.unit || "oz",
-          ratio: String(r.ratio || "").trim(),
-        };
-      })
-      .filter((r) => r.chemicalId && (r.chemicalName || r.amount || r.ratio));
-
-    const payload = {
-      id: jobId || uid(),
-      customerId: selectedCustomerId,
-      startDate: jobStartDate,
-      startTime: jobStartTime,
-      servicePlan: jobServicePlan,
-      pests: jobPests,
-      notes: jobNotes,
+    return {
+      id: crypto?.randomUUID?.() || String(Date.now()),
+      date,
+      time,
+      customerName,
+      address,
+      phone,
+      email,
+      serviceType,
+      pestTypes,
+      chemicals: cleanedChems,
+      notes,
       subtotal,
       tax,
       total,
-      chemicalsUsed: cleanedChem,
-      // snapshot customer fields (so old receipts keep the old address if it changes later)
-      customerSnapshot: { name: c.name, address: c.address, phone: c.phone, email: c.email },
-      createdAt: Date.now(),
+      // Calendar fields:
+      scheduledAt: time ? `${date} ${time}` : "",
     };
-
-    setJobs((prev) => {
-      const exists = prev.some((x) => x.id === payload.id);
-      if (exists) return prev.map((x) => (x.id === payload.id ? payload : x));
-      return [payload, ...prev];
-    });
-
-    alert("Job saved ✅");
-  }
-
-  function loadJob(id) {
-    const j = jobs.find((x) => x.id === id);
-    if (!j) return;
-
-    setTab("jobs");
-    setJobId(j.id);
-    setSelectedCustomerId(j.customerId);
-    setJobStartDate(j.startDate);
-    setJobStartTime(j.startTime);
-    setJobServicePlan(j.servicePlan || "One-time");
-    setJobPests(Array.isArray(j.pests) ? j.pests : []);
-    setJobNotes(j.notes || "");
-    setJobSubtotalRaw(String(j.subtotal ?? ""));
-    setJobChemRows(
-      (j.chemicalsUsed || []).map((c) => ({
-        rowId: uid(),
-        chemicalId: c.chemicalId || "",
-        amount: c.amount || "",
-        unit: c.unit || "oz",
-        ratio: c.ratio || "",
-      })) || [{ rowId: uid(), chemicalId: chemicals[0]?.id || "", amount: "", unit: "oz", ratio: "" }]
-    );
-  }
-
-  function deleteJob(id) {
-    if (!confirm("Delete this job?")) return;
-    setJobs((prev) => prev.filter((x) => x.id !== id));
-    if (jobId === id) setJobId("");
-  }
-
-  function togglePest(p) {
-    setJobPests((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
-  }
-
-  function addChemRow() {
-    setJobChemRows((prev) => [...prev, { rowId: uid(), chemicalId: chemicals[0]?.id || "", amount: "", unit: "oz", ratio: "" }]);
-  }
-
-  function updateChemRow(rowId, patch) {
-    setJobChemRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)));
-  }
-
-  function removeChemRow(rowId) {
-    setJobChemRows((prev) => {
-      const next = prev.filter((r) => r.rowId !== rowId);
-      return next.length ? next : [{ rowId: uid(), chemicalId: chemicals[0]?.id || "", amount: "", unit: "oz", ratio: "" }];
-    });
-  }
-
-  // Receipt + email (mailto)
-  const currentCustomerForReceipt = selectedCustomer || { name: "", address: "", phone: "", email: "" };
-
-  const receiptText = useMemo(() => {
-    const customer = {
-      name: currentCustomerForReceipt.name || "",
-      address: currentCustomerForReceipt.address || "",
-      phone: currentCustomerForReceipt.phone || "",
-      email: currentCustomerForReceipt.email || "",
-    };
-
-    const job = {
-      startDate: jobStartDate,
-      startTime: jobStartTime,
-      servicePlan: jobServicePlan,
-      pests: jobPests,
-      notes: jobNotes,
-    };
-
-    const chems = jobChemRows
-      .map((r) => {
-        const chem = chemicals.find((x) => x.id === r.chemicalId);
-        return {
-          chemicalName: chem?.name || "",
-          epa: chem?.epa || "",
-          amount: r.amount,
-          unit: r.unit,
-          ratio: r.ratio,
-        };
-      })
-      .filter((c) => c.chemicalName || c.amount || c.ratio);
-
-    return buildReceiptText({
-      business,
-      customer,
-      job,
-      totals: { subtotal, tax, total },
-      chemicals: chems,
-    });
   }, [
-    business,
-    currentCustomerForReceipt,
-    jobStartDate,
-    jobStartTime,
-    jobServicePlan,
-    jobPests,
-    jobNotes,
-    jobChemRows,
+    date,
+    time,
+    customerName,
+    address,
+    phone,
+    email,
+    serviceType,
+    pestTypes,
     chemicals,
+    notes,
     subtotal,
     tax,
     total,
   ]);
 
-  const mailtoHref = useMemo(() => {
-    const to = encodeURIComponent((currentCustomerForReceipt.email || "").trim());
-    const subject = encodeURIComponent(`Receipt - New Day Pest Control - ${jobStartDate} ${jobStartTime}`);
-    const body = encodeURIComponent(receiptText);
-    return `mailto:${to}?subject=${subject}&body=${body}`;
-  }, [currentCustomerForReceipt.email, jobStartDate, jobStartTime, receiptText]);
+  function togglePest(pest) {
+    setPestTypes((prev) => (prev.includes(pest) ? prev.filter((p) => p !== pest) : [...prev, pest]));
+  }
 
-  // Calendar computed
-  const jobsByDate = useMemo(() => {
+  function addChemicalRow() {
+    setChemicals((prev) => [
+      ...prev,
+      { name: "", epa: "", amountUsed: "", amountUnit: "oz", mixRatio: "" },
+    ]);
+  }
+
+  function updateChemical(idx, patch) {
+    setChemicals((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+  }
+
+  function removeChemical(idx) {
+    setChemicals((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length ? next : [{ name: "", epa: "", amountUsed: "", amountUnit: "oz", mixRatio: "" }];
+    });
+  }
+
+  function resetForm() {
+    setDate(todayISO());
+    setTime("");
+    setCustomerName("");
+    setAddress("");
+    setPhone("");
+    setEmail("");
+    setServiceType("One-time");
+    setPestTypes([]);
+    setChemicals([{ name: "", epa: "", amountUsed: "", amountUnit: "oz", mixRatio: "" }]);
+    setNotes("");
+    setSubtotalRaw("");
+    lastAutoFillRef.current = "";
+  }
+
+  function saveCustomerFromForm() {
+    const name = (customerName || "").trim();
+    if (!name) return alert("Customer name is required to save.");
+    const newCustomer = {
+      id: crypto?.randomUUID?.() || String(Date.now()),
+      name,
+      address: (address || "").trim(),
+      phone: (phone || "").trim(),
+      email: (email || "").trim(),
+      plan: serviceType,
+      updatedAt: Date.now(),
+    };
+    setCustomers((prev) => {
+      const existingIndex = prev.findIndex((c) => c.name.toLowerCase() === name.toLowerCase());
+      if (existingIndex >= 0) {
+        const copy = [...prev];
+        copy[existingIndex] = { ...copy[existingIndex], ...newCustomer, id: copy[existingIndex].id };
+        return copy;
+      }
+      return [newCustomer, ...prev];
+    });
+    alert("Customer saved ✅");
+  }
+
+  function saveJob({ alsoSaveCustomer } = { alsoSaveCustomer: true }) {
+    if (!customerName.trim()) return alert("Customer name is required.");
+    if (!address.trim()) return alert("Address is required.");
+    if (!phone.trim()) return alert("Phone is required.");
+
+    if (alsoSaveCustomer) saveCustomerFromForm();
+
+    setJobs((prev) => [{ ...currentJob }, ...prev]);
+    alert("Job saved ✅");
+  }
+
+  function removeJob(id) {
+    if (!confirm("Delete this job?")) return;
+    setJobs((prev) => prev.filter((j) => j.id !== id));
+  }
+
+  function loadJob(job) {
+    setActive("customers");
+    setDate(job.date || todayISO());
+    setTime(job.time || "");
+    setCustomerName(job.customerName || "");
+    setAddress(job.address || "");
+    setPhone(job.phone || "");
+    setEmail(job.email || "");
+    setServiceType(job.serviceType || "One-time");
+    setPestTypes(Array.isArray(job.pestTypes) ? job.pestTypes : []);
+    setChemicals(
+      Array.isArray(job.chemicals) && job.chemicals.length
+        ? job.chemicals.map((c) => ({
+            name: c.name || "",
+            epa: c.epa || "",
+            amountUsed: c.amountUsed || "",
+            amountUnit: c.amountUnit || "oz",
+            mixRatio: c.mixRatio || "",
+          }))
+        : [{ name: "", epa: "", amountUsed: "", amountUnit: "oz", mixRatio: "" }]
+    );
+    setNotes(job.notes || "");
+    setSubtotalRaw(String(job.subtotal ?? ""));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // Calendar: show week/day grid 8:00–18:00 in 30-min increments
+  const dayStartMin = 8 * 60;
+  const dayEndMin = 18 * 60;
+  const slotStep = 30;
+
+  const weekStart = useMemo(() => startOfWeek(calendarFocus), [calendarFocus]);
+  const weekDays = useMemo(() => [...Array(7)].map((_, i) => addDays(weekStart, i)), [weekStart]);
+
+  function openSlot(d, minutes) {
+    setSlotISODate(toISODate(d));
+    setSlotTime(formatTimeLabel(minutes));
+    setSlotModalOpen(true);
+
+    // preload date/time into form
+    setDate(toISODate(d));
+    setTime(formatTimeLabel(minutes));
+  }
+
+  // simple scheduled lookup
+  const scheduledByKey = useMemo(() => {
     const map = new Map();
-    for (const j of jobs) {
-      const d = j.startDate;
-      if (!map.has(d)) map.set(d, []);
-      map.get(d).push(j);
-    }
-    // sort each day by time
-    for (const [k, arr] of map.entries()) {
-      arr.sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
-      map.set(k, arr);
-    }
+    jobs.forEach((j) => {
+      if (!j.date || !j.time) return;
+      const key = `${j.date}__${j.time}`;
+      const arr = map.get(key) || [];
+      arr.push(j);
+      map.set(key, arr);
+    });
     return map;
   }, [jobs]);
 
-  const monthGrid = useMemo(() => {
-    const first = new Date(calMonth.y, calMonth.m, 1);
-    const startDay = first.getDay(); // 0=Sun
-    const daysInMonth = new Date(calMonth.y, calMonth.m + 1, 0).getDate();
-    const cells = [];
-
-    // blanks before
-    for (let i = 0; i < startDay; i++) cells.push({ kind: "blank", key: `b${i}` });
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(calMonth.y, calMonth.m, d);
-      const iso = toISODate(date);
-      const count = jobsByDate.get(iso)?.length || 0;
-      cells.push({ kind: "day", iso, dayNum: d, count, key: iso });
-    }
-
-    // pad to full weeks
-    while (cells.length % 7 !== 0) cells.push({ kind: "blank", key: `t${cells.length}` });
-    return cells;
-  }, [calMonth, jobsByDate]);
-
-  function prevMonth() {
-    setCalMonth((p) => {
-      const m = p.m - 1;
-      if (m < 0) return { y: p.y - 1, m: 11 };
-      return { y: p.y, m };
-    });
-  }
-
-  function nextMonth() {
-    setCalMonth((p) => {
-      const m = p.m + 1;
-      if (m > 11) return { y: p.y + 1, m: 0 };
-      return { y: p.y, m };
-    });
-  }
-
-  // UI Layout
-  const pageTitle =
-    tab === "customers"
-      ? "Customers"
-      : tab === "jobs"
-      ? "Jobs"
-      : tab === "calendar"
-      ? "Calendar"
-      : tab === "materials"
-      ? "Materials"
-      : tab === "contracts"
-      ? "Contracts"
-      : "Receipts";
+  const pageTitle = useMemo(() => {
+    if (active === "customers") return "Customers / Service Ticket";
+    if (active === "calendar") return "Calendar";
+    if (active === "materials") return "Materials";
+    if (active === "contracts") return "Contracts";
+    if (active === "receipts") return "Receipts";
+    return "Jobs";
+  }, [active]);
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f5f7fb",
-        color: "#111827",
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-      }}
-    >
+    <div style={appRoot}>
       {/* Top bar */}
-      <div
-        style={{
-          height: 62,
-          background: "white",
-          borderBottom: "1px solid rgba(0,0,0,0.08)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 18px",
-        }}
-      >
+      <div style={topbar}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 10,
-              background: "#0f7a2a",
-              display: "grid",
-              placeItems: "center",
-              color: "white",
-              fontWeight: 900,
-            }}
-          >
-            ND
-          </div>
+          <div style={brandMark}>ND</div>
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-            <div style={{ fontWeight: 950, fontSize: 16 }}>{business.name}</div>
+            <div style={{ fontWeight: 950, fontSize: 16 }}>New Day Pest Control</div>
             <div style={{ fontSize: 12, color: "#4b5563", fontWeight: 800 }}>
-              {business.phone} • {business.email}
+              (201) 972-5592 • newdaypestcontrol@yahoo.com
             </div>
           </div>
         </div>
@@ -660,271 +505,195 @@ export default function App() {
         </div>
       </div>
 
-      {/* Body */}
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 14, padding: 14 }}>
+      {/* Layout */}
+      <div style={layout}>
         {/* Sidebar */}
-        <div
-          style={{
-            background: "white",
-            borderRadius: 14,
-            border: "1px solid rgba(0,0,0,0.08)",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ padding: 14, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
-            <div style={{ fontWeight: 950, fontSize: 13, color: "#0f7a2a" }}>MENU</div>
-          </div>
+        <div style={sidebar}>
+          <div style={sidebarHead}>MENU</div>
 
           {[
             { id: "customers", label: "Customers" },
-            { id: "jobs", label: "Jobs" },
             { id: "calendar", label: "Calendar" },
+            { id: "jobs", label: "Jobs" },
             { id: "materials", label: "Materials" },
             { id: "contracts", label: "Contracts" },
             { id: "receipts", label: "Receipts" },
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() => setTab(item.id)}
+              onClick={() => setActive(item.id)}
               style={{
-                width: "100%",
-                textAlign: "left",
-                padding: "12px 14px",
-                border: "none",
-                background: tab === item.id ? "rgba(15, 122, 42, 0.10)" : "transparent",
-                color: tab === item.id ? "#0f7a2a" : "#111827",
-                fontWeight: 950,
-                cursor: "pointer",
-                borderLeft: tab === item.id ? "4px solid #0f7a2a" : "4px solid transparent",
+                ...navBtn,
+                background: active === item.id ? "rgba(15, 122, 42, 0.10)" : "transparent",
+                color: active === item.id ? "#0f7a2a" : "#111827",
+                borderLeft: active === item.id ? "4px solid #0f7a2a" : "4px solid transparent",
               }}
             >
               {item.label}
             </button>
           ))}
 
-          <div style={{ padding: 14, borderTop: "1px solid rgba(0,0,0,0.06)", color: "#6b7280" }}>
-            <div style={{ fontSize: 12, fontWeight: 900 }}>Data</div>
-            <div style={{ fontSize: 12, marginTop: 6, fontWeight: 800 }}>Saved locally on this device</div>
+          <div style={sidebarFooter}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#111827" }}>Autofill</div>
+            <div style={{ fontSize: 12, marginTop: 6, color: "#6b7280", fontWeight: 800 }}>
+              Type/select a saved customer name to auto-fill address/phone/email.
+            </div>
           </div>
         </div>
 
         {/* Main area */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.85fr", gap: 14 }}>
-          {/* Main panel */}
-          <div
-            style={{
-              background: "white",
-              borderRadius: 14,
-              border: "1px solid rgba(0,0,0,0.08)",
-              padding: 16,
-            }}
-          >
-            {/* CUSTOMERS */}
-            {tab === "customers" && (
+        <div style={mainGrid}>
+          {/* Left panel */}
+          <div style={card}>
+            {active === "customers" && (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div style={cardHead}>
                   <div>
-                    <div style={{ fontSize: 18, fontWeight: 950 }}>Customer Database</div>
+                    <div style={{ fontSize: 18, fontWeight: 950 }}>Service Ticket</div>
                     <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                      Add customers once. Jobs will auto-fill from here.
+                      Autofill or manually enter info • save job • receipt • email
                     </div>
                   </div>
+
                   <div style={{ display: "flex", gap: 10 }}>
-                    <Btn variant="outline" onClick={newCustomer}>
-                      + New
-                    </Btn>
-                    <Btn onClick={saveCustomer}>Save</Btn>
-                    <Btn variant="danger" onClick={deleteCustomer}>
-                      Delete
-                    </Btn>
+                    <button style={btnPrimary} onClick={() => saveJob({ alsoSaveCustomer: true })}>
+                      Save Job
+                    </button>
+                    <button style={btnOutline} onClick={saveCustomerFromForm}>
+                      Save Customer
+                    </button>
+                    <button style={btnOutline} onClick={resetForm}>
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: 12 }} />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <Field label="Date (bold)">
+                    <Input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      style={{ fontWeight: 900 }}
+                    />
+                  </Field>
+
+                  <Field label="Time">
+                    <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="e.g. 9:30 AM" />
+                  </Field>
+
+                  <Field label="Charge (subtotal)">
+                    <Input
+                      value={subtotalRaw}
+                      onChange={(e) => setSubtotalRaw(e.target.value)}
+                      placeholder="e.g. 149.00"
+                      inputMode="decimal"
+                    />
+                  </Field>
+                </div>
+
+                <div style={{ height: 12 }} />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12 }}>
+                  <Field label="Customer Name (autofill)">
+                    <>
+                      <Input
+                        list="customerList"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Start typing a saved customer… or enter a new name"
+                      />
+                      <datalist id="customerList">
+                        {customers.map((c) => (
+                          <option key={c.id} value={c.name} />
+                        ))}
+                      </datalist>
+                    </>
+                  </Field>
+
+                  <Field label="Phone">
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(###) ###-####" />
+                  </Field>
+
+                  <div style={{ gridColumn: "1 / span 2" }}>
+                    <Field label="Address">
+                      <Input
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="Street, City, NJ ZIP"
+                      />
+                      <div style={{ marginTop: 6 }}>
+                        {address.trim() ? (
+                          <a
+                            href={googleMapsLink(address)}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ fontSize: 12, fontWeight: 900, color: "#0f7a2a", textDecoration: "none" }}
+                          >
+                            Open in Google Maps →
+                          </a>
+                        ) : (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "#6b7280" }}>
+                            Add address to enable Google Maps link
+                          </div>
+                        )}
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div style={{ gridColumn: "1 / span 2" }}>
+                    <Field label="Email">
+                      <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="customer@email.com" />
+                    </Field>
                   </div>
                 </div>
 
                 <div style={{ height: 12 }} />
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <Field label="Customer Name">
-                    <Input
-                      value={customerForm.name}
-                      onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))}
-                      placeholder="Customer full name"
-                    />
-                  </Field>
-
-                  <Field label="Phone Number">
-                    <Input
-                      value={customerForm.phone}
-                      onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))}
-                      placeholder="(###) ###-####"
-                    />
-                  </Field>
-
-                  <div style={{ gridColumn: "1 / span 2" }}>
-                    <Field label="Address">
-                      <Input
-                        value={customerForm.address}
-                        onChange={(e) => setCustomerForm((p) => ({ ...p, address: e.target.value }))}
-                        placeholder="Street, City, NJ ZIP"
-                      />
-                    </Field>
-                    {customerForm.address?.trim() ? (
-                      <div style={{ marginTop: 8 }}>
-                        <a
-                          href={mapsUrl(customerForm.address)}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontWeight: 900, color: "#0f7a2a", textDecoration: "none" }}
-                        >
-                          Open in Google Maps →
-                        </a>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div style={{ gridColumn: "1 / span 2" }}>
-                    <Field label="Email">
-                      <Input
-                        value={customerForm.email}
-                        onChange={(e) => setCustomerForm((p) => ({ ...p, email: e.target.value }))}
-                        placeholder="customer@email.com"
-                      />
-                    </Field>
-                  </div>
-
                   <Field label="Service Plan">
-                    <Select
-                      value={customerForm.plan}
-                      onChange={(e) => setCustomerForm((p) => ({ ...p, plan: e.target.value }))}
-                    >
-                      {SERVICE_PLANS.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
+                    <Select value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
+                      {SERVICE_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
                         </option>
                       ))}
                     </Select>
                   </Field>
 
-                  <div style={{ display: "flex", alignItems: "end", justifyContent: "flex-end" }}>
-                    <Btn onClick={() => startNewJob(customerForm.id || selectedCustomerId || "")}>
-                      Create Job for this Customer
-                    </Btn>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* JOBS */}
-            {tab === "jobs" && (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 18, fontWeight: 950 }}>Job / Receipt</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                      Pick a customer → auto-fills from database.
+                  <Field label="Totals">
+                    <div style={totalsBox}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900 }}>
+                        <span>Subtotal</span>
+                        <span>{money(subtotal)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900 }}>
+                        <span>NJ Tax (6.625%)</span>
+                        <span>{money(tax)}</span>
+                      </div>
+                      <div style={{ height: 1, background: "rgba(0,0,0,0.10)", margin: "8px 0" }} />
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 950, color: "#0f7a2a" }}>
+                        <span>Total</span>
+                        <span>{money(total)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <Btn variant="outline" onClick={() => startNewJob(selectedCustomerId)}>
-                      + New Job
-                    </Btn>
-                    <Btn onClick={saveJob}>Save Job</Btn>
-                  </div>
+                  </Field>
                 </div>
 
                 <div style={{ height: 12 }} />
 
-                <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12 }}>
-                  <Field label="Customer">
-                    <Select
-                      value={selectedCustomerId}
-                      onChange={(e) => {
-                        setSelectedCustomerId(e.target.value);
-                      }}
-                    >
-                      <option value="">Select customer…</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name || "Untitled"} • {c.phone || ""}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-
-                  <Field label="Service Plan">
-                    <Select value={jobServicePlan} onChange={(e) => setJobServicePlan(e.target.value)}>
-                      {SERVICE_PLANS.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-
-                  <Field label="Date">
-                    <Input type="date" value={jobStartDate} onChange={(e) => setJobStartDate(e.target.value)} />
-                  </Field>
-
-                  <Field label="Time">
-                    <Input type="time" value={jobStartTime} onChange={(e) => setJobStartTime(e.target.value)} />
-                  </Field>
-
-                  <div style={{ gridColumn: "1 / span 2" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ fontSize: 12, fontWeight: 950 }}>Customer Auto-Fill</div>
-                      {selectedCustomer?.address ? (
-                        <a
-                          href={mapsUrl(selectedCustomer.address)}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontWeight: 950, color: "#0f7a2a", textDecoration: "none", fontSize: 12 }}
-                        >
-                          Open Address in Google Maps →
-                        </a>
-                      ) : null}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 8,
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        borderRadius: 12,
-                        padding: 10,
-                        background: "#fbfcfe",
-                        fontWeight: 800,
-                        color: "#374151",
-                        fontSize: 13,
-                        lineHeight: 1.35,
-                      }}
-                    >
-                      <div><b>Name:</b> {selectedCustomer?.name || "—"}</div>
-                      <div><b>Phone:</b> {selectedCustomer?.phone || "—"}</div>
-                      <div><b>Email:</b> {selectedCustomer?.email || "—"}</div>
-                      <div><b>Address:</b> {selectedCustomer?.address || "—"}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ height: 14 }} />
-
                 {/* Pests */}
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    borderRadius: 14,
-                    padding: 12,
-                    background: "#fbfcfe",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ fontWeight: 950 }}>Service Type (Pest)</div>
+                <div style={sectionBox}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <div style={{ fontWeight: 950 }}>Pest Type</div>
                     <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>Select all that apply</div>
                   </div>
-
                   <div style={{ height: 10 }} />
-
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {PEST_TYPES.map((p) => {
-                      const on = jobPests.includes(p);
+                      const on = pestTypes.includes(p);
                       return (
                         <button
                           key={p}
@@ -935,7 +704,7 @@ export default function App() {
                             border: on ? "1px solid rgba(15, 122, 42, 0.55)" : "1px solid rgba(0,0,0,0.12)",
                             background: on ? "rgba(15, 122, 42, 0.12)" : "white",
                             color: on ? "#0f7a2a" : "#111827",
-                            fontWeight: 950,
+                            fontWeight: 900,
                             cursor: "pointer",
                           }}
                         >
@@ -946,74 +715,62 @@ export default function App() {
                   </div>
                 </div>
 
-                <div style={{ height: 14 }} />
+                <div style={{ height: 12 }} />
 
                 {/* Chemicals */}
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    borderRadius: 14,
-                    padding: 12,
-                    background: "#fbfcfe",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div style={sectionBox}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                     <div>
-                      <div style={{ fontWeight: 950 }}>Chemicals Used</div>
+                      <div style={{ fontWeight: 950 }}>Chemicals Used (EPA #)</div>
                       <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                        Multiple chemicals per job • amount used • mix ratio • editable
+                        Pick from list or type manually • add amount + mix ratio
                       </div>
                     </div>
-
-                    <Btn variant="outline" onClick={addChemRow}>
+                    <button style={btnOutline} onClick={addChemicalRow}>
                       + Add Chemical
-                    </Btn>
+                    </button>
                   </div>
 
                   <div style={{ height: 10 }} />
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    {jobChemRows.map((r) => (
-                      <div
-                        key={r.rowId}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1.4fr 0.6fr 0.5fr 1fr auto",
-                          gap: 10,
-                          alignItems: "end",
-                          padding: 10,
-                          borderRadius: 12,
-                          background: "white",
-                          border: "1px solid rgba(0,0,0,0.08)",
-                        }}
-                      >
-                        <Field label="Chemical">
-                          <Select
-                            value={r.chemicalId}
-                            onChange={(e) => updateChemRow(r.rowId, { chemicalId: e.target.value })}
-                          >
-                            {chemicals.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}{c.epa ? ` (EPA ${c.epa})` : ""}
-                              </option>
-                            ))}
-                          </Select>
+                    {chemicals.map((c, idx) => (
+                      <div key={idx} style={chemRow}>
+                        <Field label="Chemical (pick or type)">
+                          <>
+                            <Select
+                              value={c.name}
+                              onChange={(e) => {
+                                const picked = chemLibrary.find((x) => x.name === e.target.value);
+                                updateChemical(idx, { name: e.target.value, epa: picked?.epa || "" });
+                              }}
+                            >
+                              <option value="">Select…</option>
+                              {chemLibrary.map((x) => (
+                                <option key={x.name} value={x.name}>
+                                  {x.name} {x.epa ? `(EPA ${x.epa})` : ""}
+                                </option>
+                              ))}
+                            </Select>
+                            <div style={{ height: 6 }} />
+                            <Input
+                              value={c.name}
+                              onChange={(e) => updateChemical(idx, { name: e.target.value })}
+                              placeholder="Or type a chemical name"
+                            />
+                          </>
                         </Field>
 
-                        <Field label="Amount Used">
-                          <Input
-                            value={r.amount}
-                            onChange={(e) => updateChemRow(r.rowId, { amount: e.target.value })}
-                            placeholder="e.g. 2.5"
-                            inputMode="decimal"
-                          />
+                        <Field label="EPA # (editable)">
+                          <Input value={c.epa} onChange={(e) => updateChemical(idx, { epa: e.target.value })} placeholder="EPA Reg No." />
+                        </Field>
+
+                        <Field label="Amount">
+                          <Input value={c.amountUsed} onChange={(e) => updateChemical(idx, { amountUsed: e.target.value })} placeholder="e.g. 2.5" />
                         </Field>
 
                         <Field label="Unit">
-                          <Select
-                            value={r.unit}
-                            onChange={(e) => updateChemRow(r.rowId, { unit: e.target.value })}
-                          >
+                          <Select value={c.amountUnit} onChange={(e) => updateChemical(idx, { amountUnit: e.target.value })}>
                             <option value="oz">oz</option>
                             <option value="ml">ml</option>
                             <option value="gal">gal</option>
@@ -1024,25 +781,10 @@ export default function App() {
                         </Field>
 
                         <Field label="Mix Ratio">
-                          <Input
-                            value={r.ratio}
-                            onChange={(e) => updateChemRow(r.rowId, { ratio: e.target.value })}
-                            placeholder='e.g. "1 oz / 1 gal"'
-                          />
+                          <Input value={c.mixRatio} onChange={(e) => updateChemical(idx, { mixRatio: e.target.value })} placeholder='e.g. "1 oz / 1 gal"' />
                         </Field>
 
-                        <button
-                          onClick={() => removeChemRow(r.rowId)}
-                          style={{
-                            height: 38,
-                            borderRadius: 10,
-                            border: "1px solid rgba(0,0,0,0.12)",
-                            background: "white",
-                            fontWeight: 950,
-                            cursor: "pointer",
-                          }}
-                          title="Remove chemical"
-                        >
+                        <button style={iconBtn} onClick={() => removeChemical(idx)} title="Remove">
                           ✕
                         </button>
                       </div>
@@ -1050,497 +792,626 @@ export default function App() {
                   </div>
                 </div>
 
-                <div style={{ height: 14 }} />
+                <div style={{ height: 12 }} />
 
-                {/* Notes + totals + receipt */}
                 <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12 }}>
                   <Field label="Notes">
-                    <Textarea value={jobNotes} onChange={(e) => setJobNotes(e.target.value)} placeholder="Areas treated, findings, etc." />
+                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes about the job, areas treated, findings, etc." />
                   </Field>
 
-                  <div
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "#fbfcfe",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ fontWeight: 950 }}>Billing</div>
-
-                    <Field label="Amount Charged (Subtotal)">
-                      <Input
-                        value={jobSubtotalRaw}
-                        onChange={(e) => setJobSubtotalRaw(e.target.value)}
-                        placeholder="e.g. 149.00"
-                        inputMode="decimal"
-                      />
-                    </Field>
-
-                    <div style={{ display: "grid", gap: 8, fontWeight: 900 }}>
-                      <Row label="NJ Tax (6.625%)" value={money(tax)} />
-                      <div style={{ height: 1, background: "rgba(0,0,0,0.10)" }} />
-                      <Row label="Total" value={money(total)} strong />
-                    </div>
-
-                    <div style={{ height: 6 }} />
-
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <a
-                        href={mailtoHref}
-                        style={{
-                          textDecoration: "none",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: "10px 12px",
-                          borderRadius: 10,
-                          background: "#0f7a2a",
-                          color: "white",
-                          fontWeight: 950,
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          opacity: (currentCustomerForReceipt.email || "").trim() ? 1 : 0.55,
-                        }}
-                        onClick={(e) => {
-                          if (!(currentCustomerForReceipt.email || "").trim()) {
-                            e.preventDefault();
-                            alert("Add the customer email first, then click Email Receipt.");
-                          }
-                        }}
-                        title="Opens your email app with the receipt filled in"
-                      >
-                        Email Receipt
-                      </a>
-
-                      <Btn
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(receiptText);
-                            alert("Receipt copied ✅");
-                          } catch {
-                            alert("Copy failed. You can select and copy manually.");
-                          }
-                        }}
-                      >
-                        Copy Receipt
-                      </Btn>
-                    </div>
-
+                  <div style={{ ...sectionBox, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ fontWeight: 950 }}>Receipt</div>
+                    <MailtoReceiptButton job={currentJob} />
                     <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                      Email uses your email app (mailto). Later we can add real sending from the app.
+                      This opens your email app with the receipt filled in.
                     </div>
                   </div>
                 </div>
-
-                <div style={{ height: 12 }} />
-
-                <details style={{ marginTop: 6 }}>
-                  <summary style={{ cursor: "pointer", fontWeight: 900, color: "#0f7a2a" }}>Receipt Preview</summary>
-                  <pre
-                    style={{
-                      marginTop: 10,
-                      whiteSpace: "pre-wrap",
-                      background: "#fff",
-                      border: "1px solid rgba(0,0,0,0.10)",
-                      borderRadius: 12,
-                      padding: 12,
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                      fontSize: 12,
-                    }}
-                  >
-                    {receiptText}
-                  </pre>
-                </details>
               </>
             )}
 
-            {/* CALENDAR */}
-            {tab === "calendar" && (
+            {active === "calendar" && (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div style={cardHead}>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 950 }}>Calendar</div>
                     <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                      Month view + scheduled jobs. Click a day to see the schedule.
+                      Click any date/time slot to schedule a future job.
                     </div>
                   </div>
+
                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <Btn variant="outline" onClick={prevMonth}>◀</Btn>
-                    <Pill>
-                      {new Date(calMonth.y, calMonth.m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-                    </Pill>
-                    <Btn variant="outline" onClick={nextMonth}>▶</Btn>
+                    <button style={btnOutline} onClick={() => setCalendarFocus(addDays(calendarFocus, -7))}>
+                      ◀ Prev
+                    </button>
+                    <button style={btnOutline} onClick={() => setCalendarFocus(new Date())}>
+                      Today
+                    </button>
+                    <button style={btnOutline} onClick={() => setCalendarFocus(addDays(calendarFocus, 7))}>
+                      Next ▶
+                    </button>
+                    <Select value={calendarMode} onChange={(e) => setCalendarMode(e.target.value)} style={{ width: 120 }}>
+                      <option value="week">Week</option>
+                      <option value="day">Day</option>
+                    </Select>
                   </div>
                 </div>
 
                 <div style={{ height: 12 }} />
 
-                {/* Month grid */}
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    borderRadius: 14,
-                    overflow: "hidden",
-                    background: "#fff",
-                  }}
-                >
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", background: "rgba(15, 122, 42, 0.10)" }}>
-                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                      <div key={d} style={{ padding: 10, fontWeight: 950, color: "#0f7a2a", fontSize: 12 }}>
-                        {d}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-                    {monthGrid.map((cell) => {
-                      if (cell.kind === "blank") {
-                        return <div key={cell.key} style={{ height: 92, borderTop: "1px solid rgba(0,0,0,0.06)" }} />;
-                      }
-
-                      const selected = cell.iso === calSelectedDate;
-                      return (
-                        <button
-                          key={cell.key}
-                          onClick={() => setCalSelectedDate(cell.iso)}
-                          style={{
-                            height: 92,
-                            border: "none",
-                            borderTop: "1px solid rgba(0,0,0,0.06)",
-                            borderRight: "1px solid rgba(0,0,0,0.06)",
-                            textAlign: "left",
-                            padding: 10,
-                            background: selected ? "rgba(15, 122, 42, 0.10)" : "white",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <div style={{ fontWeight: 950 }}>{cell.dayNum}</div>
-                            {cell.count ? <Pill>{cell.count}</Pill> : null}
+                {calendarMode === "week" ? (
+                  <div style={calendarGridWrap}>
+                    <div style={calendarHeaderRow}>
+                      <div style={{ width: 80 }} />
+                      {weekDays.map((d) => {
+                        const iso = toISODate(d);
+                        return (
+                          <div key={iso} style={calendarHeaderCell}>
+                            <div style={{ fontWeight: 950 }}>{d.toLocaleDateString(undefined, { weekday: "short" })}</div>
+                            <div style={{ fontWeight: 900, color: "#0f7a2a" }}>{iso}</div>
                           </div>
-                          {cell.count ? (
-                            <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                              Scheduled jobs
-                            </div>
-                          ) : (
-                            <div style={{ marginTop: 6, fontSize: 12, color: "#9ca3af", fontWeight: 800 }}>
-                              —
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={{ height: 12 }} />
-
-                {/* Day schedule */}
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    borderRadius: 14,
-                    padding: 12,
-                    background: "#fbfcfe",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div>
-                      {/* Bold date requested */}
-                      <div style={{ fontSize: 16, fontWeight: 950 }}>
-                        {formatNiceDate(calSelectedDate)}
-                      </div>
-                      <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                        Click a job to open it in Jobs.
-                      </div>
+                        );
+                      })}
                     </div>
 
-                    <Btn
-                      onClick={() => {
-                        // quick schedule: jump to Jobs with date/time preset
-                        setTab("jobs");
-                        setJobId("");
-                        setJobStartDate(calSelectedDate);
-                        setJobStartTime("09:00");
-                        setJobPests([]);
-                        setJobNotes("");
-                        setJobSubtotalRaw("");
-                        setJobChemRows([{ rowId: uid(), chemicalId: chemicals[0]?.id || "", amount: "", unit: "oz", ratio: "" }]);
-                      }}
-                    >
-                      + Schedule Job
-                    </Btn>
-                  </div>
-
-                  <div style={{ height: 10 }} />
-
-                  {(() => {
-                    const dayJobs = jobsByDate.get(calSelectedDate) || [];
-                    if (!dayJobs.length) {
-                      return <div style={{ color: "#6b7280", fontWeight: 900 }}>No jobs scheduled.</div>;
-                    }
-                    return (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {dayJobs.map((j) => {
-                          const snap = j.customerSnapshot || {};
-                          const addr = snap.address || "";
-                          return (
-                            <div
-                              key={j.id}
-                              style={{
-                                background: "white",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                                borderRadius: 12,
-                                padding: 12,
-                                display: "grid",
-                                gridTemplateColumns: "0.25fr 1fr",
-                                gap: 12,
-                                alignItems: "start",
-                              }}
-                            >
-                              <div style={{ fontWeight: 950, color: "#0f7a2a" }}>
-                                {j.startTime || "—"}
-                              </div>
-                              <div>
-                                <div style={{ fontWeight: 950 }}>{snap.name || "Customer"}</div>
-                                <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                                  {snap.phone ? `📞 ${snap.phone}` : ""}
-                                  {snap.phone && (j.pests || []).length ? " • " : ""}
-                                  {(j.pests || []).slice(0, 3).join(", ")}
-                                  {(j.pests || []).length > 3 ? "…" : ""}
-                                </div>
-
-                                {/* Address + Google Maps link requested */}
-                                <div style={{ marginTop: 6, fontSize: 12, fontWeight: 900, color: "#374151" }}>
-                                  {addr ? (
-                                    <>
-                                      <span>{addr}</span>{" "}
-                                      <a
-                                        href={mapsUrl(addr)}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        style={{ color: "#0f7a2a", textDecoration: "none", fontWeight: 950 }}
-                                      >
-                                        (Map)
-                                      </a>
-                                    </>
-                                  ) : (
-                                    <span style={{ color: "#9ca3af" }}>No address</span>
-                                  )}
-                                </div>
-
-                                <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                                  <Btn
-                                    variant="outline"
-                                    onClick={() => loadJob(j.id)}
-                                  >
-                                    Open
-                                  </Btn>
-                                  <Btn variant="danger" onClick={() => deleteJob(j.id)}>
-                                    Delete
-                                  </Btn>
-                                </div>
-                              </div>
+                    <div style={calendarBody}>
+                      {/* time column */}
+                      <div style={{ width: 80 }}>
+                        {Array.from({ length: (dayEndMin - dayStartMin) / slotStep + 1 }, (_, i) => dayStartMin + i * slotStep).map(
+                          (min) => (
+                            <div key={min} style={timeCell}>
+                              {formatTimeLabel(min)}
                             </div>
-                          );
-                        })}
+                          )
+                        )}
                       </div>
-                    );
-                  })()}
-                </div>
+
+                      {/* day columns */}
+                      {weekDays.map((d) => {
+                        const isoDate = toISODate(d);
+                        return (
+                          <div key={isoDate} style={dayCol}>
+                            {Array.from({ length: (dayEndMin - dayStartMin) / slotStep }, (_, i) => dayStartMin + i * slotStep).map(
+                              (min) => {
+                                const t = formatTimeLabel(min);
+                                const key = `${isoDate}__${t}`;
+                                const scheduled = scheduledByKey.get(key) || [];
+                                return (
+                                  <div key={key} style={slotCell} onClick={() => openSlot(d, min)}>
+                                    {scheduled.slice(0, 2).map((j) => (
+                                      <div key={j.id} style={scheduledChip}>
+                                        <div style={{ fontWeight: 950 }}>{j.customerName}</div>
+                                        <div style={{ fontSize: 11, fontWeight: 800, color: "#065f46" }}>
+                                          {(j.pestTypes || []).slice(0, 2).join(", ") || j.serviceType}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {scheduled.length > 2 ? (
+                                      <div style={{ fontSize: 11, fontWeight: 900, color: "#0f7a2a" }}>
+                                        +{scheduled.length - 2} more
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  // Day view
+                  <div style={calendarGridWrap}>
+                    <div style={cardMiniHead}>
+                      <div style={{ fontWeight: 950 }}>
+                        {calendarFocus.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
+                      </div>
+                      <div style={{ fontWeight: 900, color: "#0f7a2a" }}>{toISODate(calendarFocus)}</div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "80px 1fr" }}>
+                      <div>
+                        {Array.from({ length: (dayEndMin - dayStartMin) / slotStep + 1 }, (_, i) => dayStartMin + i * slotStep).map(
+                          (min) => (
+                            <div key={min} style={timeCell}>
+                              {formatTimeLabel(min)}
+                            </div>
+                          )
+                        )}
+                      </div>
+
+                      <div>
+                        {Array.from({ length: (dayEndMin - dayStartMin) / slotStep }, (_, i) => dayStartMin + i * slotStep).map(
+                          (min) => {
+                            const isoDate = toISODate(calendarFocus);
+                            const t = formatTimeLabel(min);
+                            const key = `${isoDate}__${t}`;
+                            const scheduled = scheduledByKey.get(key) || [];
+                            return (
+                              <div key={key} style={slotCell} onClick={() => openSlot(calendarFocus, min)}>
+                                {scheduled.map((j) => (
+                                  <div key={j.id} style={scheduledChip}>
+                                    <div style={{ fontWeight: 950 }}>{j.customerName}</div>
+                                    <div style={{ fontSize: 11, fontWeight: 800, color: "#065f46" }}>
+                                      {(j.pestTypes || []).join(", ") || j.serviceType}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
-            {/* Other tabs placeholder (not empty “broken”, just not built yet) */}
-            {["materials", "contracts", "receipts"].includes(tab) && (
+            {active === "jobs" && (
+              <div style={{ padding: 10, color: "#6b7280", fontWeight: 800 }}>
+                Use the right panel “Saved Jobs” list. Click one to load it back into the Service Ticket.
+              </div>
+            )}
+
+            {active === "materials" && (
               <div style={{ padding: 10 }}>
-                <div style={{ fontSize: 18, fontWeight: 950 }}>{pageTitle}</div>
-                <div style={{ marginTop: 10, color: "#6b7280", fontWeight: 800 }}>
-                  Coming next. Calendar + Jobs + Customers are the priority screens.
+                <div style={{ fontWeight: 950 }}>Materials / Chemicals Library</div>
+                <div style={{ marginTop: 8, color: "#6b7280", fontWeight: 800 }}>
+                  Right now the chemical list is built into the job form. Next step is a full editable Materials page.
                 </div>
+              </div>
+            )}
+
+            {active === "contracts" && (
+              <div style={{ padding: 10, color: "#6b7280", fontWeight: 800 }}>
+                Contracts page is next (monthly/quarterly plans, renewals, etc.)
+              </div>
+            )}
+
+            {active === "receipts" && (
+              <div style={{ padding: 10, color: "#6b7280", fontWeight: 800 }}>
+                Receipts are generated from a job. Use “Email Receipt” inside the ticket.
               </div>
             )}
           </div>
 
-          {/* Right panel: Lists */}
-          <div
-            style={{
-              background: "white",
-              borderRadius: 14,
-              border: "1px solid rgba(0,0,0,0.08)",
-              padding: 16,
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 520,
-              gap: 12,
-            }}
-          >
-            {/* Customers list */}
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 950 }}>Customers</div>
-                <Pill>{customers.length}</Pill>
+          {/* Right panel: Saved jobs + Customers */}
+          <div style={rightCol}>
+            <div style={card}>
+              <div style={cardHead}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 950 }}>Saved Jobs</div>
+                  <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
+                    Click a row to load it. (Drag/drop scheduling comes next.)
+                  </div>
+                </div>
+                <Pill>{jobs.length} saved</Pill>
               </div>
 
-              <div style={{ marginTop: 10, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 12, overflow: "hidden" }}>
-                {customers.length === 0 ? (
-                  <div style={{ padding: 12, color: "#6b7280", fontWeight: 800 }}>
-                    No customers yet. Add one in Customers tab.
-                  </div>
-                ) : (
-                  customers.slice(0, 12).map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => {
-                        loadCustomer(c.id);
-                        setTab("customers");
-                      }}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: 12,
-                        border: "none",
-                        borderTop: "1px solid rgba(0,0,0,0.06)",
-                        background: c.id === selectedCustomerId ? "rgba(15, 122, 42, 0.08)" : "white",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ fontWeight: 950 }}>{c.name || "Untitled"}</div>
-                      <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                        {c.phone || ""}{c.phone && c.plan ? " • " : ""}{c.plan || ""}
-                      </div>
-                    </button>
-                  ))
-                )}
+              <div style={tableWrap}>
+                <table style={table}>
+                  <thead>
+                    <tr style={{ background: "rgba(15, 122, 42, 0.10)" }}>
+                      <th style={th}>Date</th>
+                      <th style={th}>Time</th>
+                      <th style={th}>Customer</th>
+                      <th style={th}>Total</th>
+                      <th style={th}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={emptyRow}>
+                          No saved jobs yet. Schedule one in Calendar or fill the ticket and save.
+                        </td>
+                      </tr>
+                    ) : (
+                      jobs.map((j) => (
+                        <tr key={j.id} style={tr} onClick={() => loadJob(j)}>
+                          <td style={td}>{j.date}</td>
+                          <td style={td}>{j.time || "—"}</td>
+                          <td style={td}>
+                            <div style={{ fontWeight: 950 }}>{j.customerName}</div>
+                            <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
+                              {(j.pestTypes || []).slice(0, 2).join(", ") || j.serviceType}
+                            </div>
+                          </td>
+                          <td style={td}>{money(j.total)}</td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            <button
+                              style={btnSmall}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeJob(j.id);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* Jobs list */}
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 950 }}>Jobs</div>
-                <Pill>{jobs.length}</Pill>
-              </div>
-
-              <div style={{ marginTop: 10, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 12, overflow: "hidden" }}>
-                {jobs.length === 0 ? (
-                  <div style={{ padding: 12, color: "#6b7280", fontWeight: 800 }}>
-                    No jobs yet. Create one in Jobs tab.
+            <div style={card}>
+              <div style={cardHead}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 950 }}>Customers</div>
+                  <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
+                    Saved customers auto-fill the ticket when you type/select the name.
                   </div>
-                ) : (
-                  jobs.slice(0, 12).map((j) => {
-                    const snap = j.customerSnapshot || {};
-                    return (
-                      <button
-                        key={j.id}
-                        onClick={() => loadJob(j.id)}
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          padding: 12,
-                          border: "none",
-                          borderTop: "1px solid rgba(0,0,0,0.06)",
-                          background: "white",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {/* Bold date requested — visible in list */}
-                        <div style={{ fontWeight: 950 }}>
-                          {j.startDate} {j.startTime}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                          {snap.name || "Customer"} • {money(j.total || 0)}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Manage chemicals quick editor */}
-            <div style={{ borderTop: "1px solid rgba(0,0,0,0.08)", paddingTop: 12 }}>
-              <div style={{ fontWeight: 950 }}>Chemicals List</div>
-              <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
-                Edit here later if needed (we can add full manager next).
+                </div>
+                <Pill>{customers.length} customers</Pill>
               </div>
 
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                {chemicals.slice(0, 6).map((c) => (
-                  <div
-                    key={c.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 12,
-                      padding: 10,
-                      background: "#fbfcfe",
-                      fontWeight: 900,
-                      fontSize: 13,
-                    }}
-                  >
-                    <div>
-                      {c.name}
-                      {c.epa ? <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>EPA {c.epa}</div> : null}
+              <div style={{ display: "grid", gap: 8 }}>
+                {customers.slice(0, 8).map((c) => (
+                  <div key={c.id} style={miniRow} onClick={() => setCustomerName(c.name)}>
+                    <div style={{ fontWeight: 950 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
+                      {c.phone || ""} {c.address ? "• " + c.address : ""}
                     </div>
-                    <button
-                      onClick={() => {
-                        const newName = prompt("Chemical name:", c.name);
-                        if (newName === null) return;
-                        const newEpa = prompt("EPA (optional):", c.epa || "");
-                        if (newEpa === null) return;
-                        setChemicals((prev) => prev.map((x) => (x.id === c.id ? { ...x, name: newName.trim() || x.name, epa: (newEpa || "").trim() } : x)));
-                      }}
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.12)",
-                        background: "white",
-                        borderRadius: 10,
-                        padding: "8px 10px",
-                        fontWeight: 950,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Edit
-                    </button>
                   </div>
                 ))}
-
-                <Btn
-                  variant="outline"
-                  onClick={() => {
-                    const name = prompt("New chemical name:");
-                    if (!name) return;
-                    const epa = prompt("EPA (optional):") || "";
-                    setChemicals((prev) => [...prev, { id: uid(), name: name.trim(), epa: epa.trim() }]);
-                  }}
-                >
-                  + Add Chemical
-                </Btn>
+                {customers.length > 8 ? (
+                  <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>
+                    (Showing 8. The name dropdown includes all customers.)
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Small footer tip */}
-      <div style={{ padding: 14, color: "#6b7280", fontWeight: 800, fontSize: 12 }}>
-        Tip: Calendar shows future jobs automatically after you Save Jobs. Click a date → schedule.
-      </div>
+      {/* Calendar slot modal */}
+      <Modal
+        open={slotModalOpen}
+        title="Schedule Job"
+        subtitle={`Selected: ${slotISODate} at ${slotTime}`}
+        onClose={() => setSlotModalOpen(false)}
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button style={btnOutline} onClick={() => setSlotModalOpen(false)}>
+              Cancel
+            </button>
+            <button
+              style={btnPrimary}
+              onClick={() => {
+                // date/time already set when opening slot
+                saveJob({ alsoSaveCustomer: true });
+                setSlotModalOpen(false);
+              }}
+            >
+              Save Scheduled Job
+            </button>
+          </div>
+        }
+      >
+        <div style={{ color: "#6b7280", fontWeight: 800, fontSize: 13 }}>
+          Tip: Start typing the customer name to auto-fill, or enter a new customer manually.
+        </div>
+      </Modal>
     </div>
   );
 }
 
-function Row({ label, value, strong }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div style={{ fontWeight: strong ? 950 : 900, color: "#374151" }}>{label}</div>
-      <div style={{ fontWeight: strong ? 950 : 900 }}>{value}</div>
-    </div>
-  );
-}
+/* ---------- Styles ---------- */
+
+const appRoot = {
+  minHeight: "100vh",
+  background: "#f5f7fb",
+  color: "#111827",
+  fontFamily:
+    'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+};
+
+const topbar = {
+  height: 62,
+  background: "white",
+  borderBottom: "1px solid rgba(0,0,0,0.08)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "0 18px",
+};
+
+const brandMark = {
+  width: 40,
+  height: 40,
+  borderRadius: 10,
+  background: "#0f7a2a",
+  display: "grid",
+  placeItems: "center",
+  color: "white",
+  fontWeight: 950,
+};
+
+const layout = { padding: 14 };
+
+const sidebar = {
+  background: "white",
+  borderRadius: 14,
+  border: "1px solid rgba(0,0,0,0.08)",
+  overflow: "hidden",
+};
+
+const sidebarHead = {
+  padding: 14,
+  borderBottom: "1px solid rgba(0,0,0,0.06)",
+  fontWeight: 950,
+  fontSize: 13,
+  color: "#0f7a2a",
+};
+
+const navBtn = {
+  width: "100%",
+  textAlign: "left",
+  padding: "12px 14px",
+  border: "none",
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
+const sidebarFooter = {
+  padding: 14,
+  borderTop: "1px solid rgba(0,0,0,0.06)",
+};
+
+const mainGrid = {
+  display: "grid",
+  gridTemplateColumns: "260px 1fr",
+  gap: 14,
+};
+
+const card = {
+  background: "white",
+  borderRadius: 14,
+  border: "1px solid rgba(0,0,0,0.08)",
+  padding: 16,
+};
+
+const rightCol = { display: "grid", gap: 14 };
+
+const cardHead = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const cardMiniHead = {
+  padding: 12,
+  border: "1px solid rgba(0,0,0,0.08)",
+  borderRadius: 12,
+  background: "#fbfcfe",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "baseline",
+};
+
+const inputBase = {
+  height: 38,
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.12)",
+  padding: "0 10px",
+  outline: "none",
+  fontSize: 14,
+  background: "white",
+  fontWeight: 800,
+};
+
+const textareaBase = {
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.12)",
+  padding: 10,
+  outline: "none",
+  fontSize: 14,
+  background: "white",
+  minHeight: 110,
+  resize: "vertical",
+  fontWeight: 800,
+};
+
+const btnPrimary = {
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 12px",
+  borderRadius: 10,
+  background: "#0f7a2a",
+  color: "white",
+  fontWeight: 950,
+  border: "1px solid rgba(0,0,0,0.08)",
+  cursor: "pointer",
+};
+
+const btnOutline = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  background: "white",
+  color: "#0f7a2a",
+  fontWeight: 950,
+  border: "1px solid rgba(15, 122, 42, 0.35)",
+  cursor: "pointer",
+};
+
+const btnSmall = {
+  padding: "6px 10px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.12)",
+  background: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const iconBtn = {
+  height: 38,
+  width: 38,
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.12)",
+  background: "white",
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
+const sectionBox = {
+  border: "1px solid rgba(0,0,0,0.08)",
+  borderRadius: 14,
+  padding: 12,
+  background: "#fbfcfe",
+};
+
+const totalsBox = {
+  border: "1px solid rgba(0,0,0,0.08)",
+  borderRadius: 12,
+  padding: 10,
+  background: "white",
+  display: "grid",
+  gap: 6,
+};
+
+const chemRow = {
+  display: "grid",
+  gridTemplateColumns: "1.2fr 0.7fr 0.5fr 0.5fr 0.8fr auto",
+  gap: 10,
+  alignItems: "end",
+  padding: 10,
+  borderRadius: 12,
+  background: "white",
+  border: "1px solid rgba(0,0,0,0.08)",
+};
+
+const tableWrap = {
+  marginTop: 12,
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.08)",
+  overflow: "auto",
+};
+
+const table = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
+
+const th = {
+  textAlign: "left",
+  padding: "10px 10px",
+  fontWeight: 950,
+  color: "#0f7a2a",
+  fontSize: 12,
+};
+
+const td = {
+  padding: "10px 10px",
+  verticalAlign: "top",
+  fontWeight: 800,
+  borderTop: "1px solid rgba(0,0,0,0.06)",
+};
+
+const tr = { cursor: "pointer" };
+
+const emptyRow = { padding: 14, color: "#6b7280", fontWeight: 800 };
+
+const miniRow = {
+  padding: 10,
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.08)",
+  background: "#fbfcfe",
+  cursor: "pointer",
+};
+
+const modalBackdrop = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.35)",
+  display: "grid",
+  placeItems: "center",
+  zIndex: 50,
+  padding: 14,
+};
+
+const modalCard = {
+  width: "min(900px, 100%)",
+  background: "white",
+  borderRadius: 14,
+  border: "1px solid rgba(0,0,0,0.08)",
+  boxShadow: "0 30px 80px rgba(0,0,0,0.25)",
+  overflow: "hidden",
+};
+
+const modalHead = {
+  padding: 14,
+  borderBottom: "1px solid rgba(0,0,0,0.06)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const modalFooter = {
+  padding: 14,
+  borderTop: "1px solid rgba(0,0,0,0.06)",
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+};
+
+const calendarGridWrap = {
+  border: "1px solid rgba(0,0,0,0.08)",
+  borderRadius: 14,
+  overflow: "hidden",
+  background: "white",
+};
+
+const calendarHeaderRow = {
+  display: "flex",
+  borderBottom: "1px solid rgba(0,0,0,0.06)",
+  background: "#fbfcfe",
+};
+
+const calendarHeaderCell = {
+  flex: 1,
+  padding: 10,
+  borderLeft: "1px solid rgba(0,0,0,0.06)",
+};
+
+const calendarBody = {
+  display: "flex",
+  alignItems: "stretch",
+};
+
+const timeCell = {
+  height: 36,
+  padding: "8px 10px",
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#6b7280",
+  borderBottom: "1px solid rgba(0,0,0,0.06)",
+  background: "#fbfcfe",
+};
+
+const dayCol = {
+  flex: 1,
+  borderLeft: "1px solid rgba(0,0,0,0.06)",
+};
+
+const slotCell = {
+  height: 36,
+  borderBottom: "1px solid rgba(0,0,0,0.06)",
+  padding: 4,
+  cursor: "pointer",
+  background: "white",
+};
+
+const scheduledChip = {
+  borderRadius: 10,
+  padding: "4px 6px",
+  marginBottom: 4,
+  background: "rgba(15, 122, 42, 0.10)",
+  border: "1px solid rgba(15, 122, 42, 0.25)",
+};
