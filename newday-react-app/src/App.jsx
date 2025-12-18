@@ -1,40 +1,37 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const NJ_TAX = 0.06625;
 
 const PESTS = [
   "Ants","Mice","Rats","Spiders","Roaches","Bed Bugs","Wasps","Bees","Hornets",
-  "Yellow Jackets","Termites","Mosquitoes","Fleas/Ticks","Other"
+  "Yellow Jackets","Termites","Mosquitoes","Fleas/Ticks","Other",
 ];
 
-const SERVICE_PLANS = ["One-time", "Monthly", "Quarterly", "Bi-Monthly", "Annual"];
+const SERVICE_TYPES = ["One-time", "Monthly", "Quarterly"];
 
-const DEFAULT_CHEM_OPTIONS = [
-  { name: "FirstStrike Soft Bait", epa: "12455-79" }, // example
-  { name: "CB-80", epa: "499-362" }, // example
-  { name: "Transport Mikron", epa: "2724-803" }, // example
+const CHEMICALS = [
+  { name: "FirstStrike Soft Bait", epa: "7173-258" },
+  { name: "CB-80 Insecticide Aerosol", epa: "279-3393" },
+  { name: "Transport Mikron Insecticide", epa: "8033-109-279" },
+  { name: "Transport GHP Insecticide", epa: "8033-96-279" },
 ];
 
-function money(n) {
-  const x = Number(n);
-  if (Number.isNaN(x)) return "";
-  return x.toFixed(2);
+function uid() {
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-function fmtDate(d) {
-  const yyyy = d.getFullYear();
+function formatDate(d) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const yyyy = d.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
 }
 
-function startOfWeek(date) {
-  const d = new Date(date);
-  const day = d.getDay(); // 0 Sun
-  const diff = (day === 0 ? -6 : 1 - day); // Monday start
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+function ymd(d) {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function addDays(date, n) {
@@ -43,544 +40,319 @@ function addDays(date, n) {
   return d;
 }
 
-function addMinutes(date, n) {
+function startOfWeekMonday(date) {
   const d = new Date(date);
-  d.setMinutes(d.getMinutes() + n);
+  const day = d.getDay(); // 0 Sun - 6 Sat
+  const diff = (day === 0 ? -6 : 1) - day; // move to Monday
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
   return d;
 }
 
-function timeLabel(date) {
-  const h = date.getHours();
-  const m = String(date.getMinutes()).padStart(2, "0");
+function timeLabel(h, m) {
   const ampm = h >= 12 ? "PM" : "AM";
-  const hh = ((h + 11) % 12) + 1;
-  return `${hh}:${m} ${ampm}`;
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  const mm = String(m).padStart(2, "0");
+  return `${hh}:${mm} ${ampm}`;
 }
 
-function googleMapsLink(address) {
-  if (!address?.trim()) return "";
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.trim())}`;
+function mapsLink(address) {
+  const q = encodeURIComponent(address || "");
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
-function useLocalStorageState(key, initialValue) {
-  const [v, setV] = useState(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
-  }, [key, v]);
-  return [v, setV];
-}
-
-function SignaturePad({ value, onChange }) {
-  const canvasRef = useRef(null);
-  const drawing = useRef(false);
-  const last = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    // load existing signature
-    if (!value) return;
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
-    const img = new Image();
-    img.onload = () => {
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, 0, 0);
-    };
-    img.src = value;
-  }, [value]);
-
-  function getPos(e) {
-    const c = canvasRef.current;
-    const rect = c.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const x = (clientX - rect.left) * (c.width / rect.width);
-    const y = (clientY - rect.top) * (c.height / rect.height);
-    return { x, y };
-  }
-
-  function start(e) {
-    const c = canvasRef.current;
-    if (!c) return;
-    drawing.current = true;
-    last.current = getPos(e);
-  }
-
-  function move(e) {
-    if (!drawing.current) return;
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
-    const p = getPos(e);
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(last.current.x, last.current.y);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    last.current = p;
-    e.preventDefault?.();
-  }
-
-  function end() {
-    if (!drawing.current) return;
-    drawing.current = false;
-    const c = canvasRef.current;
-    if (!c) return;
-    onChange?.(c.toDataURL("image/png"));
-  }
-
-  function clear() {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
-    ctx.clearRect(0, 0, c.width, c.height);
-    onChange?.("");
-  }
-
-  return (
-    <div className="sigBox">
-      <div className="sigHeader">
-        <div>
-          <div className="h3">Customer Signature</div>
-          <div className="muted">Sign with mouse/finger. Saves with the job.</div>
-        </div>
-        <button className="btn ghost" type="button" onClick={clear}>Clear</button>
-      </div>
-
-      <canvas
-        ref={canvasRef}
-        width={900}
-        height={220}
-        className="sigCanvas"
-        onMouseDown={start}
-        onMouseMove={move}
-        onMouseUp={end}
-        onMouseLeave={end}
-        onTouchStart={start}
-        onTouchMove={move}
-        onTouchEnd={end}
-      />
-    </div>
-  );
+function money(n) {
+  const x = Number(n || 0);
+  return x.toFixed(2);
 }
 
 export default function App() {
   const [page, setPage] = useState("Customers");
-  const [customers, setCustomers] = useLocalStorageState("nd_customers", [
-    // You can delete these examples later:
-    { id: crypto.randomUUID(), name: "John Smith", phone: "201-555-1111", email: "john@email.com", address: "Fair Lawn, NJ" },
-  ]);
-  const [jobs, setJobs] = useLocalStorageState("nd_jobs", []);
-  const [chemOptions, setChemOptions] = useLocalStorageState("nd_chems", DEFAULT_CHEM_OPTIONS);
 
-  // Calendar (weekly) state
-  const [weekAnchor, setWeekAnchor] = useState(() => startOfWeek(new Date()));
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekAnchor, i)), [weekAnchor]);
-  const timeSlots = useMemo(() => {
-    const slots = [];
-    const base = new Date(weekAnchor);
-    base.setHours(8, 0, 0, 0); // 8:00 AM start
-    for (let i = 0; i < 20; i++) { // 8:00 -> 18:00 in 30-min (20 slots = 10 hours)
-      slots.push(addMinutes(base, i * 30));
-    }
-    return slots;
-  }, [weekAnchor]);
+  const [customers, setCustomers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("nd_customers") || "[]"); } catch { return []; }
+  });
+  const [jobs, setJobs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("nd_jobs") || "[]"); } catch { return []; }
+  });
 
-  // Ticket form state (manual + autofill)
-  const emptyTicket = {
-    id: "",
-    date: fmtDate(new Date()),
-    time: "09:00",
-    servicePlan: "One-time",
-    charge: "",
+  useEffect(() => localStorage.setItem("nd_customers", JSON.stringify(customers)), [customers]);
+  useEffect(() => localStorage.setItem("nd_jobs", JSON.stringify(jobs)), [jobs]);
+
+  // Shared “active job” (Calendar click fills this, Customers page edits/saves it)
+  const blankJob = useMemo(() => ({
+    id: uid(),
+    date: formatDate(new Date()),
+    time: "",
+    serviceType: "One-time",
     customerName: "",
     phone: "",
     email: "",
     address: "",
     pests: [],
+    chemicals: [{ id: uid(), name: "", epa: "", amount: "", unit: "oz", mix: "" }],
     notes: "",
-    chemicals: [
-      { chemicalName: "", epa: "", amount: "", unit: "oz", mixRatio: "" }
-    ],
-    signature: "",
-  };
-  const [ticket, setTicket] = useState(emptyTicket);
+    charge: "",
+    taxRate: NJ_TAX,
+    signatureDataUrl: "",
+  }), []);
 
-  const subtotal = useMemo(() => {
-    const v = Number(ticket.charge);
-    return Number.isFinite(v) ? v : 0;
-  }, [ticket.charge]);
+  const [jobDraft, setJobDraft] = useState(blankJob);
 
-  const tax = useMemo(() => subtotal * NJ_TAX, [subtotal]);
-  const total = useMemo(() => subtotal + tax, [subtotal, tax]);
-
-  const customerMatches = useMemo(() => {
-    const q = (ticket.customerName || "").trim().toLowerCase();
-    if (!q) return [];
-    return customers
-      .filter(c => c.name.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [ticket.customerName, customers]);
-
-  function applyCustomer(c) {
-    // Autofill, but still editable after fill
-    setTicket(t => ({
-      ...t,
-      customerName: c.name,
-      phone: c.phone || "",
-      email: c.email || "",
-      address: c.address || "",
+  // Autofill: when typing customer name, if exact match, fill details but still editable
+  useEffect(() => {
+    const match = customers.find(c => c.name.trim().toLowerCase() === jobDraft.customerName.trim().toLowerCase());
+    if (!match) return;
+    setJobDraft(j => ({
+      ...j,
+      phone: j.phone || match.phone || "",
+      email: j.email || match.email || "",
+      address: j.address || match.address || "",
     }));
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobDraft.customerName]);
 
-  function pickSlot(dayDate, slotDate) {
-    // Click a calendar slot → pre-fill ticket and jump to Customers page
-    const dateStr = fmtDate(dayDate);
-    const hh = String(slotDate.getHours()).padStart(2, "0");
-    const mm = String(slotDate.getMinutes()).padStart(2, "0");
-    setTicket(t => ({ ...emptyTicket, date: dateStr, time: `${hh}:${mm}` }));
-    setPage("Customers");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const totals = useMemo(() => {
+    const subtotal = Number(jobDraft.charge || 0);
+    const tax = subtotal * (jobDraft.taxRate ?? NJ_TAX);
+    return { subtotal, tax, total: subtotal + tax };
+  }, [jobDraft.charge, jobDraft.taxRate]);
+
+  function saveCustomerFromDraft() {
+    const name = jobDraft.customerName.trim();
+    if (!name) return alert("Enter customer name first.");
+    const next = {
+      id: uid(),
+      name,
+      phone: jobDraft.phone.trim(),
+      email: jobDraft.email.trim(),
+      address: jobDraft.address.trim(),
+    };
+    setCustomers(prev => {
+      const existingIdx = prev.findIndex(c => c.name.trim().toLowerCase() === name.toLowerCase());
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = { ...copy[existingIdx], ...next, id: copy[existingIdx].id };
+        return copy;
+      }
+      return [next, ...prev];
+    });
+    alert("Customer saved (local).");
   }
 
   function saveJob() {
-    const id = ticket.id || crypto.randomUUID();
-    const job = {
-      ...ticket,
-      id,
-      subtotal: money(subtotal),
-      tax: money(tax),
-      total: money(total),
-      createdAt: new Date().toISOString(),
-    };
+    if (!jobDraft.date || !jobDraft.time) return alert("Pick a date and time.");
+    if (!jobDraft.customerName.trim()) return alert("Enter customer name.");
     setJobs(prev => {
-      const exists = prev.find(j => j.id === id);
-      if (exists) return prev.map(j => (j.id === id ? job : j));
-      return [job, ...prev];
+      const existingIdx = prev.findIndex(j => j.id === jobDraft.id);
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = { ...jobDraft };
+        return copy;
+      }
+      return [{ ...jobDraft }, ...prev];
     });
-    setTicket(t => ({ ...t, id }));
-    alert("Saved job.");
+    alert("Job saved (local).");
   }
 
-  function loadJob(job) {
-    setTicket({
-      id: job.id,
-      date: job.date,
-      time: job.time,
-      servicePlan: job.servicePlan,
-      charge: job.charge,
-      customerName: job.customerName,
-      phone: job.phone,
-      email: job.email,
-      address: job.address,
-      pests: job.pests || [],
-      notes: job.notes || "",
-      chemicals: job.chemicals?.length ? job.chemicals : [{ chemicalName: "", epa: "", amount: "", unit: "oz", mixRatio: "" }],
-      signature: job.signature || "",
-    });
-    setPage("Customers");
+  function clearJob() {
+    setJobDraft({ ...blankJob, id: uid() });
   }
 
-  function clearTicket() {
-    setTicket(emptyTicket);
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <div className="logo">ND</div>
+          <div>
+            <div className="title">New Day Pest Control</div>
+            <div className="subtitle">(201) 972-5592 • newdaypestcontrol@yahoo.com</div>
+          </div>
+        </div>
+
+        <div className="topright">
+          <div className="pill">NJ Tax: 6.625%</div>
+          <div className="crumb">{page}</div>
+        </div>
+      </header>
+
+      <div className="body">
+        <aside className="sidebar">
+          <div className="menuTitle">MENU</div>
+          {["Customers","Calendar","Jobs","Materials","Contracts","Receipts"].map(p => (
+            <button
+              key={p}
+              className={"navBtn " + (page === p ? "active" : "")}
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+          <div className="status">
+            <div className="statusTitle">Status</div>
+            <div className="statusLine">Local save: <b>ON</b> (browser)</div>
+          </div>
+        </aside>
+
+        <main className="main">
+          {page === "Customers" && (
+            <CustomersPage
+              jobDraft={jobDraft}
+              setJobDraft={setJobDraft}
+              totals={totals}
+              customers={customers}
+              jobs={jobs}
+              onSaveJob={saveJob}
+              onClear={clearJob}
+              onSaveCustomer={saveCustomerFromDraft}
+            />
+          )}
+
+          {page === "Calendar" && (
+            <CalendarPage
+              jobs={jobs}
+              customers={customers}
+              onCreateAt={(dateStr, timeStr) => {
+                setJobDraft(j => ({
+                  ...j,
+                  id: uid(),
+                  date: dateStr,
+                  time: timeStr,
+                }));
+                setPage("Customers");
+              }}
+            />
+          )}
+
+          {page !== "Customers" && page !== "Calendar" && (
+            <div className="card">
+              <div className="h1">{page}</div>
+              <div className="muted">
+                This section is coming next. The working PestPac-style screen is under <b>Customers</b>.
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function CustomersPage({ jobDraft, setJobDraft, totals, customers, jobs, onSaveJob, onClear, onSaveCustomer }) {
+  const customerNames = customers.map(c => c.name);
+
+  function setField(k, v) {
+    setJobDraft(prev => ({ ...prev, [k]: v }));
   }
 
   function togglePest(p) {
-    setTicket(t => {
-      const has = t.pests.includes(p);
-      return { ...t, pests: has ? t.pests.filter(x => x !== p) : [...t.pests, p] };
+    setJobDraft(prev => {
+      const has = prev.pests.includes(p);
+      return { ...prev, pests: has ? prev.pests.filter(x => x !== p) : [...prev.pests, p] };
     });
   }
 
   function addChemicalRow() {
-    setTicket(t => ({
-      ...t,
-      chemicals: [...t.chemicals, { chemicalName: "", epa: "", amount: "", unit: "oz", mixRatio: "" }],
+    setJobDraft(prev => ({
+      ...prev,
+      chemicals: [...prev.chemicals, { id: uid(), name: "", epa: "", amount: "", unit: "oz", mix: "" }],
     }));
   }
 
-  function removeChemicalRow(idx) {
-    setTicket(t => ({
-      ...t,
-      chemicals: t.chemicals.length <= 1 ? t.chemicals : t.chemicals.filter((_, i) => i !== idx),
+  function updateChemical(id, patch) {
+    setJobDraft(prev => ({
+      ...prev,
+      chemicals: prev.chemicals.map(r => (r.id === id ? { ...r, ...patch } : r)),
     }));
   }
 
-  function updateChemical(idx, patch) {
-    setTicket(t => ({
-      ...t,
-      chemicals: t.chemicals.map((c, i) => (i === idx ? { ...c, ...patch } : c)),
+  function removeChemical(id) {
+    setJobDraft(prev => ({
+      ...prev,
+      chemicals: prev.chemicals.filter(r => r.id !== id),
     }));
   }
 
-  function selectChemical(idx, name) {
-    const found = chemOptions.find(x => x.name === name);
-    updateChemical(idx, { chemicalName: name, epa: found?.epa || "" });
-  }
-
-  function addChemicalToLibrary(name, epa) {
-    const n = (name || "").trim();
-    const e = (epa || "").trim();
-    if (!n) return;
-    setChemOptions(prev => {
-      const exists = prev.some(x => x.name.toLowerCase() === n.toLowerCase());
-      if (exists) return prev;
-      return [...prev, { name: n, epa: e }];
-    });
-  }
-
-  function emailReceipt() {
-    // For now (frontend-only) we open the user's email app with a prefilled email.
-    // Real email sending will require a backend/Netlify function later.
-    const to = (ticket.email || "").trim();
-    const subject = encodeURIComponent(`Receipt - New Day Pest Control - ${ticket.date} ${ticket.time}`);
-    const lines = [
-      `New Day Pest Control`,
-      `(201) 972-5592`,
-      `newdaypestcontrol@yahoo.com`,
-      ``,
-      `Customer: ${ticket.customerName}`,
-      `Phone: ${ticket.phone}`,
-      `Address: ${ticket.address}`,
-      ``,
-      `Service Plan: ${ticket.servicePlan}`,
-      `Pest(s): ${(ticket.pests || []).join(", ")}`,
-      ``,
-      `Subtotal: $${money(subtotal)}`,
-      `NJ Tax (6.625%): $${money(tax)}`,
-      `Total: $${money(total)}`,
-      ``,
-      `Notes: ${ticket.notes || ""}`,
-    ];
-    const body = encodeURIComponent(lines.join("\n"));
-    const mailto = `mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`;
-    window.location.href = mailto;
-  }
-
-  // ---- UI blocks ----
-  const Header = (
-    <div className="topbar">
-      <div className="brand">
-        <div className="logo">ND</div>
-        <div className="brandText">
-          <div className="brandName">New Day Pest Control</div>
-          <div className="brandSub">(201) 972-5592 • newdaypestcontrol@yahoo.com</div>
-        </div>
-      </div>
-
-      <div className="topRight">
-        <div className="pill">NJ Tax: <b>6.625%</b></div>
-        <div className="pageTitle">{page}</div>
-      </div>
-    </div>
-  );
-
-  const Sidebar = (
-    <div className="sidebar">
-      <div className="menuTitle">MENU</div>
-      {["Customers", "Calendar", "Jobs", "Materials", "Contracts", "Receipts"].map(item => (
-        <button
-          key={item}
-          className={`navItem ${page === item ? "active" : ""}`}
-          onClick={() => setPage(item)}
-          type="button"
-        >
-          {item}
-        </button>
-      ))}
-      <div className="status">
-        <div className="statusLabel">Status</div>
-        <div className="muted">Local save: <b>ON</b> (browser)</div>
-      </div>
-    </div>
-  );
-
-  const SavedJobs = (
-    <div className="card">
-      <div className="cardHead">
-        <div>
-          <div className="h2">Saved Jobs</div>
-          <div className="muted">Click a row to load it back into the form.</div>
-        </div>
-        <div className="pill">{jobs.length} saved</div>
-      </div>
-
-      <div className="tableWrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Customer</th>
-              <th>Pest</th>
-              <th className="right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="muted">No saved jobs yet. Click a Calendar slot or fill the ticket and Save.</td>
-              </tr>
-            ) : (
-              jobs.map(j => (
-                <tr key={j.id} className="row" onClick={() => loadJob(j)}>
-                  <td><b>{j.date}</b></td>
-                  <td>{j.time}</td>
-                  <td>{j.customerName}</td>
-                  <td>{(j.pests || []).join(", ")}</td>
-                  <td className="right"><b>${money(Number(j.total ?? 0)) || j.total}</b></td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  const CustomersPage = (
-    <div className="grid2">
-      <div className="card">
-        <div className="cardHead">
+  return (
+    <div className="grid3">
+      <section className="card span2">
+        <div className="cardHeader">
           <div>
-            <div className="h2">Service Ticket</div>
-            <div className="muted">Autofill by typing a saved name, OR just type manually for a new customer.</div>
+            <div className="h1">Service Ticket</div>
+            <div className="muted">Customer + job details, chemicals, notes, totals, and receipt.</div>
           </div>
           <div className="actions">
-            <button className="btn" onClick={saveJob} type="button">Save</button>
-            <button className="btn ghost" onClick={clearTicket} type="button">Clear</button>
+            <button className="btnPrimary" onClick={onSaveJob}>Save</button>
+            <button className="btn" onClick={onClear}>Clear</button>
           </div>
         </div>
 
-        {/* Date / time / plan / charge */}
-        <div className="formRow3">
-          <div>
-            <label>Date <span className="muted">(bold)</span></label>
-            <input
-              type="date"
-              value={ticket.date}
-              onChange={e => setTicket(t => ({ ...t, date: e.target.value }))}
-              className="input dateBold"
-            />
+        <div className="row3">
+          <div className="field">
+            <label>Date</label>
+            <input value={jobDraft.date} onChange={e => setField("date", e.target.value)} />
           </div>
-          <div>
+          <div className="field">
             <label>Time</label>
-            <input
-              value={ticket.time}
-              onChange={e => setTicket(t => ({ ...t, time: e.target.value }))}
-              className="input"
-              placeholder="e.g. 09:30"
-            />
+            <input placeholder="e.g. 9:30 AM" value={jobDraft.time} onChange={e => setField("time", e.target.value)} />
           </div>
-          <div>
-            <label>Service Plan</label>
-            <select
-              className="input"
-              value={ticket.servicePlan}
-              onChange={e => setTicket(t => ({ ...t, servicePlan: e.target.value }))}
-            >
-              {SERVICE_PLANS.map(x => <option key={x} value={x}>{x}</option>)}
+          <div className="field">
+            <label>Service Type</label>
+            <select value={jobDraft.serviceType} onChange={e => setField("serviceType", e.target.value)}>
+              {SERVICE_TYPES.map(x => <option key={x} value={x}>{x}</option>)}
             </select>
           </div>
-          <div>
-            <label>Charge (subtotal)</label>
-            <input
-              className="input"
-              value={ticket.charge}
-              onChange={e => setTicket(t => ({ ...t, charge: e.target.value }))}
-              placeholder="e.g. 149.00"
-            />
-          </div>
         </div>
 
-        {/* Customer */}
-        <div className="formRow2">
-          <div style={{ position: "relative" }}>
-            <label>Customer Name <span className="muted">(autofill or manual)</span></label>
+        <div className="row2">
+          <div className="field">
+            <label>Customer Name (autofill or manual)</label>
             <input
-              className="input"
-              value={ticket.customerName}
-              onChange={e => setTicket(t => ({ ...t, customerName: e.target.value }))}
-              placeholder="Start typing a saved customer OR type a new one"
+              list="customerNames"
+              placeholder="Start typing a saved customer… or type new"
+              value={jobDraft.customerName}
+              onChange={e => setField("customerName", e.target.value)}
             />
-            {customerMatches.length > 0 && (
-              <div className="typeahead">
-                {customerMatches.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="typeaheadItem"
-                    onClick={() => applyCustomer(c)}
-                  >
-                    <b>{c.name}</b>
-                    <span className="muted">{c.phone} • {c.address}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <datalist id="customerNames">
+              {customerNames.map(n => <option key={n} value={n} />)}
+            </datalist>
           </div>
-          <div>
+          <div className="field">
             <label>Phone</label>
-            <input
-              className="input"
-              value={ticket.phone}
-              onChange={e => setTicket(t => ({ ...t, phone: e.target.value }))}
-              placeholder="(###) ###-####"
-            />
+            <input placeholder="(###) ###-####" value={jobDraft.phone} onChange={e => setField("phone", e.target.value)} />
           </div>
         </div>
 
-        <div className="formRow2">
-          <div>
-            <label>Email</label>
+        <div className="field">
+          <label>Address</label>
+          <div className="withLink">
             <input
-              className="input"
-              value={ticket.email}
-              onChange={e => setTicket(t => ({ ...t, email: e.target.value }))}
-              placeholder="customer@email.com"
+              placeholder="Street, City, NJ ZIP"
+              value={jobDraft.address}
+              onChange={e => setField("address", e.target.value)}
             />
-          </div>
-          <div>
-            <label>Address <span className="muted">(click Maps)</span></label>
-            <div className="inputWithBtn">
-              <input
-                className="input"
-                value={ticket.address}
-                onChange={e => setTicket(t => ({ ...t, address: e.target.value }))}
-                placeholder="Street, City, NJ ZIP"
-              />
-              <a
-                className={`btn ghost small ${ticket.address?.trim() ? "" : "disabled"}`}
-                href={googleMapsLink(ticket.address)}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => { if (!ticket.address?.trim()) e.preventDefault(); }}
-              >
-                Maps
-              </a>
-            </div>
+            <a className={"mapBtn " + (!jobDraft.address ? "disabled" : "")} href={mapsLink(jobDraft.address)} target="_blank" rel="noreferrer">
+              Map
+            </a>
           </div>
         </div>
 
-        {/* Pest */}
-        <div className="cardSub">
-          <div className="h3">Service Type (Pest)</div>
-          <div className="muted">Select all that apply</div>
-          <div className="pillGrid">
+        <div className="field">
+          <label>Email</label>
+          <input placeholder="customer@email.com" value={jobDraft.email} onChange={e => setField("email", e.target.value)} />
+        </div>
+
+        <div className="card inner">
+          <div className="innerHeader">
+            <div className="h2">Service Type (Pest)</div>
+            <div className="muted">Select all that apply</div>
+          </div>
+          <div className="chips">
             {PESTS.map(p => (
               <button
                 key={p}
                 type="button"
-                className={`pillBtn ${ticket.pests.includes(p) ? "on" : ""}`}
+                className={"chip " + (jobDraft.pests.includes(p) ? "on" : "")}
                 onClick={() => togglePest(p)}
               >
                 {p}
@@ -589,239 +361,223 @@ export default function App() {
           </div>
         </div>
 
-        {/* Chemicals */}
-        <div className="cardSub">
-          <div className="chemHead">
+        <div className="card inner">
+          <div className="innerHeaderRow">
             <div>
-              <div className="h3">Chemicals Used</div>
-              <div className="muted">Multiple chemicals per job • amount used • unit • mix ratio • editable</div>
+              <div className="h2">Chemicals Used</div>
+              <div className="muted">Multiple chemicals per job • amount used • mix ratio • editable</div>
             </div>
-            <button className="btn ghost" type="button" onClick={addChemicalRow}>+ Add Chemical</button>
+            <button className="btnGreen" onClick={addChemicalRow}>+ Add Chemical</button>
           </div>
 
-          {ticket.chemicals.map((c, idx) => (
-            <div key={idx} className="chemRow">
-              <div>
-                <label>Chemical</label>
-                <select
-                  className="input"
-                  value={c.chemicalName}
-                  onChange={e => selectChemical(idx, e.target.value)}
-                >
-                  <option value="">Select…</option>
-                  {chemOptions.map(x => (
-                    <option key={x.name} value={x.name}>{x.name}{x.epa ? ` (EPA ${x.epa})` : ""}</option>
-                  ))}
-                </select>
-                <div className="muted tiny">Or type: <input
-                  className="inlineInput"
-                  value={c.chemicalName}
-                  onChange={e => updateChemical(idx, { chemicalName: e.target.value })}
-                  placeholder="Type chemical name"
-                /></div>
-              </div>
+          <div className="chemGridHead">
+            <div>Chemical</div>
+            <div>EPA #</div>
+            <div>Amount</div>
+            <div>Unit</div>
+            <div>Mix Ratio</div>
+            <div></div>
+          </div>
 
-              <div>
-                <label>EPA #</label>
-                <input
-                  className="input"
-                  value={c.epa}
-                  onChange={e => updateChemical(idx, { epa: e.target.value })}
-                  placeholder="EPA number"
-                />
-              </div>
+          {jobDraft.chemicals.map(row => (
+            <div className="chemGridRow" key={row.id}>
+              <select
+                value={row.name}
+                onChange={e => {
+                  const selected = CHEMICALS.find(c => c.name === e.target.value);
+                  updateChemical(row.id, { name: e.target.value, epa: selected?.epa || row.epa });
+                }}
+              >
+                <option value="">Select…</option>
+                {CHEMICALS.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
 
-              <div>
-                <label>Amount Used</label>
-                <input
-                  className="input"
-                  value={c.amount}
-                  onChange={e => updateChemical(idx, { amount: e.target.value })}
-                  placeholder="e.g. 2.5"
-                />
-              </div>
+              <input
+                value={row.epa}
+                placeholder="EPA #"
+                onChange={e => updateChemical(row.id, { epa: e.target.value })}
+              />
 
-              <div>
-                <label>Unit</label>
-                <select
-                  className="input"
-                  value={c.unit}
-                  onChange={e => updateChemical(idx, { unit: e.target.value })}
-                >
-                  <option value="oz">oz</option>
-                  <option value="gal">gal</option>
-                  <option value="lb">lb</option>
-                  <option value="g">g</option>
-                  <option value="ml">ml</option>
-                </select>
-              </div>
+              <input
+                value={row.amount}
+                placeholder="e.g. 2.5"
+                onChange={e => updateChemical(row.id, { amount: e.target.value })}
+              />
 
-              <div>
-                <label>Mix Ratio</label>
-                <input
-                  className="input"
-                  value={c.mixRatio}
-                  onChange={e => updateChemical(idx, { mixRatio: e.target.value })}
-                  placeholder='e.g. "1 oz / 1 gal"'
-                />
-              </div>
+              <select value={row.unit} onChange={e => updateChemical(row.id, { unit: e.target.value })}>
+                <option value="oz">oz</option>
+                <option value="gal">gal</option>
+                <option value="lb">lb</option>
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+              </select>
 
-              <div className="chemRemove">
-                <button className="btn ghost" type="button" onClick={() => removeChemicalRow(idx)}>✕</button>
-              </div>
+              <input
+                value={row.mix}
+                placeholder='e.g. "1 oz / 1 gal"'
+                onChange={e => updateChemical(row.id, { mix: e.target.value })}
+              />
+
+              <button className="xBtn" onClick={() => removeChemical(row.id)}>×</button>
             </div>
           ))}
-
-          <div className="chemAddLib">
-            <div className="muted"><b>Add to chemical library</b> (so it shows in the dropdown)</div>
-            <ChemLibraryAdder onAdd={addChemicalToLibrary} />
-          </div>
         </div>
 
-        {/* Notes */}
-        <div className="cardSub">
-          <div className="h3">Notes</div>
-          <textarea
-            className="textarea"
-            value={ticket.notes}
-            onChange={e => setTicket(t => ({ ...t, notes: e.target.value }))}
-            placeholder="Type job notes here..."
-          />
-        </div>
-
-        {/* Signature */}
-        <SignaturePad
-          value={ticket.signature}
-          onChange={(sig) => setTicket(t => ({ ...t, signature: sig }))}
-        />
-
-        {/* Totals + receipt */}
-        <div className="totals">
-          <div className="totRow"><span>Subtotal</span><b>${money(subtotal)}</b></div>
-          <div className="totRow"><span>NJ Tax (6.625%)</span><b>${money(tax)}</b></div>
-          <div className="totRow big"><span>Total</span><b>${money(total)}</b></div>
-
-          <div className="receiptActions">
-            <button className="btn ghost" type="button" onClick={emailReceipt}>Email receipt</button>
+        <div className="row2">
+          <div className="field">
+            <label>Notes</label>
+            <textarea rows={4} value={jobDraft.notes} onChange={e => setField("notes", e.target.value)} />
           </div>
-
-          <div className="muted tiny">
-            Note: “Email receipt” currently opens your email app (mailto). Real sending from the app requires a backend next.
-          </div>
-        </div>
-      </div>
-
-      {SavedJobs}
-    </div>
-  );
-
-  const CalendarPage = (
-    <div className="grid2">
-      <div className="card">
-        <div className="cardHead">
-          <div>
-            <div className="h2">Calendar (Weekly)</div>
-            <div className="muted">Click a time slot to create a job. We’ll fill Date/Time automatically.</div>
-          </div>
-          <div className="actions">
-            <button className="btn ghost" type="button" onClick={() => setWeekAnchor(addDays(weekAnchor, -7))}>← Prev</button>
-            <button className="btn ghost" type="button" onClick={() => setWeekAnchor(startOfWeek(new Date()))}>Today</button>
-            <button className="btn ghost" type="button" onClick={() => setWeekAnchor(addDays(weekAnchor, 7))}>Next →</button>
-          </div>
-        </div>
-
-        <div className="calGrid">
-          <div className="calHeader timeCol">Time</div>
-          {weekDays.map((d) => (
-            <div key={fmtDate(d)} className="calHeader dayCol">
-              <div className="dow">{d.toLocaleDateString(undefined, { weekday: "short" })}</div>
-              <div className="dateBoldText">{d.toLocaleDateString()}</div>
+          <div className="card inner">
+            <div className="h2">Totals</div>
+            <div className="row2">
+              <div className="field">
+                <label>Charge (subtotal)</label>
+                <input placeholder="e.g. 149.00" value={jobDraft.charge} onChange={e => setField("charge", e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Tax</label>
+                <input value={money(totals.tax)} readOnly />
+              </div>
             </div>
+            <div className="field">
+              <label>Total</label>
+              <input value={money(totals.total)} readOnly />
+            </div>
+
+            <div className="rowButtons">
+              <button className="btnPrimary" onClick={onSaveJob}>Save Job</button>
+              <button className="btn" onClick={onSaveCustomer}>Save Customer</button>
+            </div>
+
+            <div className="mutedSmall">
+              Email receipt + real database + login comes next (this version saves locally).
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside className="card">
+        <div className="h2">Saved Jobs</div>
+        <div className="muted">Click a row to load it back into the form.</div>
+
+        <div className="table">
+          <div className="tHead">
+            <div>Date</div><div>Time</div><div>Customer</div><div>Total</div>
+          </div>
+          {jobs.length === 0 && <div className="tEmpty">No saved jobs yet.</div>}
+          {jobs.map(j => (
+            <button
+              key={j.id}
+              className="tRow"
+              onClick={() => setJobDraft({ ...j })}
+              type="button"
+            >
+              <div>{j.date}</div>
+              <div>{j.time}</div>
+              <div className="ellipsis">{j.customerName}</div>
+              <div>${money((Number(j.charge || 0) * (1 + NJ_TAX)))}</div>
+            </button>
           ))}
-
-          {timeSlots.map((t, rIdx) => (
-            <React.Fragment key={rIdx}>
-              <div className="timeCell">{timeLabel(t)}</div>
-              {weekDays.map((day) => {
-                const slot = new Date(day);
-                slot.setHours(t.getHours(), t.getMinutes(), 0, 0);
-                const slotKey = `${fmtDate(day)} ${String(slot.getHours()).padStart(2, "0")}:${String(slot.getMinutes()).padStart(2, "0")}`;
-                const jobHere = jobs.find(j => `${j.date} ${j.time}` === slotKey);
-
-                return (
-                  <button
-                    key={slotKey}
-                    className={`slot ${jobHere ? "booked" : ""}`}
-                    type="button"
-                    onClick={() => pickSlot(day, slot)}
-                    title={jobHere ? `${jobHere.customerName} (${jobHere.time})` : "Click to schedule"}
-                  >
-                    {jobHere ? (
-                      <div className="slotInner">
-                        <div className="slotName">{jobHere.customerName || "Booked"}</div>
-                        <div className="slotSmall">{(jobHere.pests || []).join(", ")}</div>
-                      </div>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </React.Fragment>
-          ))}
         </div>
-      </div>
-
-      {SavedJobs}
-    </div>
-  );
-
-  const Placeholder = (title) => (
-    <div className="card">
-      <div className="cardHead">
-        <div>
-          <div className="h2">{title}</div>
-          <div className="muted">This section is next. For now, Calendar + Customers/Service Ticket are working.</div>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="app">
-      {Header}
-      <div className="layout">
-        {Sidebar}
-        <div className="content">
-          {page === "Customers" && CustomersPage}
-          {page === "Calendar" && CalendarPage}
-          {page === "Jobs" && Placeholder("Jobs")}
-          {page === "Materials" && Placeholder("Materials")}
-          {page === "Contracts" && Placeholder("Contracts")}
-          {page === "Receipts" && Placeholder("Receipts")}
-        </div>
-      </div>
+      </aside>
     </div>
   );
 }
 
-function ChemLibraryAdder({ onAdd }) {
-  const [name, setName] = useState("");
-  const [epa, setEpa] = useState("");
+function CalendarPage({ jobs, customers, onCreateAt }) {
+  const [anchor, setAnchor] = useState(() => new Date());
+  const weekStart = useMemo(() => startOfWeekMonday(anchor), [anchor]);
+
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  const times = useMemo(() => {
+    const out = [];
+    for (let h = 7; h <= 18; h++) { // 7 AM to 6 PM
+      out.push({ h, m: 0 });
+      out.push({ h, m: 30 });
+    }
+    return out;
+  }, []);
+
+  const jobsBySlot = useMemo(() => {
+    const map = new Map();
+    for (const j of jobs) {
+      const key = `${j.date}__${j.time}`;
+      map.set(key, j);
+    }
+    return map;
+  }, [jobs]);
 
   return (
-    <div className="chemAddRow">
-      <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Chemical name" />
-      <input className="input" value={epa} onChange={e => setEpa(e.target.value)} placeholder="EPA #" />
-      <button
-        className="btn"
-        type="button"
-        onClick={() => {
-          onAdd?.(name, epa);
-          setName("");
-          setEpa("");
-        }}
-      >
-        Add
-      </button>
+    <div className="card">
+      <div className="cardHeader">
+        <div>
+          <div className="h1">Calendar</div>
+          <div className="muted">Click a time slot to schedule a job (it will open the Customers ticket).</div>
+        </div>
+        <div className="actions">
+          <button className="btn" onClick={() => setAnchor(addDays(anchor, -7))}>← Prev</button>
+          <button className="btn" onClick={() => setAnchor(new Date())}>Today</button>
+          <button className="btn" onClick={() => setAnchor(addDays(anchor, 7))}>Next →</button>
+        </div>
+      </div>
+
+      <div className="weekGrid">
+        <div className="timeColHead">Time</div>
+        {days.map(d => (
+          <div key={ymd(d)} className="dayHead">
+            <div className="dayName">{d.toLocaleDateString(undefined, { weekday: "short" })}</div>
+            <div className="dayDate"><b>{formatDate(d)}</b></div>
+          </div>
+        ))}
+
+        {times.map(t => (
+          <React.Fragment key={`${t.h}:${t.m}`}>
+            <div className="timeCell">{timeLabel(t.h, t.m)}</div>
+            {days.map(d => {
+              const dateStr = formatDate(d);
+              const timeStr = timeLabel(t.h, t.m);
+              const key = `${dateStr}__${timeStr}`;
+              const j = jobsBySlot.get(key);
+
+              return (
+                <button
+                  key={key}
+                  className={"slot " + (j ? "hasJob" : "")}
+                  onClick={() => onCreateAt(dateStr, timeStr)}
+                  type="button"
+                  title={j ? `${j.customerName} • ${j.address || ""}` : "Click to schedule"}
+                >
+                  {j ? (
+                    <div className="jobChip">
+                      <div className="jobTitle">{j.customerName}</div>
+                      <div className="jobSub">{j.address ? j.address : "No address yet"}</div>
+                      {j.address && (
+                        <a
+                          className="jobMap"
+                          href={mapsLink(j.address)}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Map
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="plus">+</span>
+                  )}
+                </button>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="mutedSmall" style={{ marginTop: 12 }}>
+        Autofill works by typing a saved customer name. If it’s a new customer, just type everything manually and “Save Customer”.
+      </div>
     </div>
   );
 }
